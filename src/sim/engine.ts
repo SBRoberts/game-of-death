@@ -33,8 +33,19 @@ export function setCells(s: SimState, faction: number, coords: ReadonlyArray<rea
   }
 }
 
+export function cloneState(s: SimState): SimState {
+  return {
+    cfg: s.cfg,
+    gen: s.gen,
+    cells: s.cells.slice(),
+    prev: s.prev.slice(),
+    pops: s.pops.slice(),
+    ringInset: s.ringInset,
+  }
+}
+
 export function step(s: SimState): void {
-  const { width: w, height: h, factions, flankingMargin } = s.cfg
+  const { width: w, height: h, factions, flankingMargin, casualtyMargin } = s.cfg
   const cells = s.cells
   const next = s.prev // reuse the old buffer; after the swap it holds gen-1
   const nf = factions.length
@@ -81,6 +92,8 @@ export function step(s: SimState): void {
         const enemy = total - friendly
         if (enemy - friendly >= flankingMargin) {
           out = dominant(counts, nf, cur) || cur // defect to the dominant enemy
+        } else if (enemy - friendly >= casualtyMargin) {
+          out = 0 // contested and outnumbered: a casualty, not a convert
         } else {
           out = (factions[cur].rule.survive >> total) & 1 ? cur : 0
         }

@@ -5,7 +5,7 @@
  */
 
 import { createState, setCells, step } from './engine'
-import { PATTERNS, patternById, placeAt, rotate, type Pattern } from './patterns'
+import { PATTERNS, WILD_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, type SimState } from './types'
@@ -13,6 +13,7 @@ import { aiAct } from './ai'
 
 export const PLAYER = 1
 export const RIVAL = 2
+export const WILDS = 3
 
 export type DuelStatus = 'running' | 'won' | 'lost'
 
@@ -41,18 +42,39 @@ export class Duel {
         { name: 'dead', rule: LIFE },
         { name: 'you', rule: LIFE },
         { name: 'rival', rule: LIFE },
+        { name: 'wilds', rule: LIFE },
       ],
       flankingMargin: this.t.flankingMargin,
+      casualtyMargin: this.t.casualtyMargin,
     })
-    this.biomass = [0, this.t.startBiomass, this.t.startBiomass]
+    this.biomass = [0, this.t.startBiomass, this.t.startBiomass, 0]
     this.drawRng = rngFrom(seed, 'draw')
     this.rivalRng = rngFrom(seed, 'rival')
 
     const soupRng = rngFrom(seed, 'soup')
     this.seedColony(PLAYER, Math.floor(this.t.width * 0.22), Math.floor(this.t.height / 2), soupRng)
     this.seedColony(RIVAL, Math.floor(this.t.width * 0.78), Math.floor(this.t.height / 2), soupRng)
+    this.seedWilds(rngFrom(seed, 'wilds'))
 
     this.hand = Array.from({ length: this.t.handSize }, () => this.draw())
+  }
+
+  /** Neutral debris field in the midfield: cover, obstacles, capturable matter. */
+  private seedWilds(rng: Rng): void {
+    const { width: w, height: h } = this.state.cfg
+    for (let i = 0; i < this.t.wildsCount; i++) {
+      const shape = WILD_SHAPES[pickInt(rng, WILD_SHAPES.length)]
+      const cells = placeAt(
+        rotate(shape, pickInt(rng, 4)),
+        Math.floor(w * 0.34 + rng() * w * 0.32),
+        4 + pickInt(rng, h - 12),
+      )
+      const clear = cells.every(([x, y]) => {
+        if (x < 1 || x >= w - 1 || y < 1 || y >= h - 1) return false
+        return this.state.cells[y * w + x] === 0
+      })
+      if (clear) setCells(this.state, WILDS, cells)
+    }
   }
 
   private seedColony(faction: number, cx: number, cy: number, rng: Rng): void {
@@ -95,7 +117,7 @@ export class Duel {
     this.biomass[RIVAL] += this.income(RIVAL)
 
     if (this.autoRival && s.gen % this.t.aiActEvery === 0) {
-      aiAct(this, RIVAL, this.rivalRng)
+      aiAct(this, RIVAL, this.rivalRng, PLAYER)
     }
 
     if (s.gen > this.t.warmupGens) {
@@ -119,7 +141,11 @@ export class Duel {
     return placeAt(rotate(pattern.cells, rot), ox, oy)
   }
 
-  canPlace(faction: number, cells: ReadonlyArray<readonly [number, number]>): boolean {
+  canPlace(
+    faction: number,
+    cells: ReadonlyArray<readonly [number, number]>,
+    clearance = 0,
+  ): boolean {
     const s = this.state
     const { width: w, height: h } = s.cfg
     const inset = s.ringInset
@@ -129,7 +155,37 @@ export class Duel {
       if (s.cells[y * w + x] !== 0) return false // no overwriting live cells
       if (!nearColony && this.withinInfluence(faction, x, y)) nearColony = true
     }
-    return nearColony
+    if (!nearColony) return false
+    if (clearance > 0) {
+      // Travelers need open ground, or the surrounding ash corrupts them.
+      const own = new Set(cells.map(([x, y]) => y * w + x))
+      for (const [x, y] of cells) {
+        for (let yy = Math.max(0, y - clearance); yy <= Math.min(h - 1, y + clearance); yy++) {
+          for (let xx = Math.max(0, x - clearance); xx <= Math.min(w - 1, x + clearance); xx++) {
+            const i = yy * w + xx
+            if (s.cells[i] !== 0 && !own.has(i)) return false
+          }
+        }
+      }
+    }
+    return true
+  }
+
+  /** Ghost info for the UI: absolute cells + whether the placement is legal now. */
+  ghostFor(
+    faction: number,
+    patternId: string,
+    ox: number,
+    oy: number,
+    rot: number,
+  ): { pattern: Pattern; cells: Array<[number, number]>; valid: boolean } {
+    const pattern = patternById(patternId)
+    const cells = this.patternCells(pattern, ox, oy, rot)
+    const valid =
+      this.status === 'running' &&
+      this.biomass[faction] >= pattern.cost &&
+      this.canPlace(faction, cells, pattern.clearance)
+    return { pattern, cells, valid }
   }
 
   private withinInfluence(faction: number, x: number, y: number): boolean {
@@ -151,7 +207,7 @@ export class Duel {
     const pattern = patternById(patternId)
     if (this.biomass[faction] < pattern.cost) return false
     const cells = this.patternCells(pattern, ox, oy, rot)
-    if (!this.canPlace(faction, cells)) return false
+    if (!this.canPlace(faction, cells, pattern.clearance)) return false
     setCells(this.state, faction, cells)
     this.biomass[faction] -= pattern.cost
     return true

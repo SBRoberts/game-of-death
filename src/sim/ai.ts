@@ -8,7 +8,7 @@ import type { Duel } from './duel'
 import { PATTERNS } from './patterns'
 import { pickInt, type Rng } from './rng'
 
-export function aiAct(duel: Duel, faction: number, rng: Rng): void {
+export function aiAct(duel: Duel, faction: number, rng: Rng, target: number): void {
   const affordable = PATTERNS.filter((p) => p.cost <= duel.biomass[faction])
   if (affordable.length === 0) return
   const pattern = affordable[pickInt(rng, affordable.length)]
@@ -22,7 +22,7 @@ export function aiAct(duel: Duel, faction: number, rng: Rng): void {
   for (let i = 0; i < s.cells.length; i++) {
     const f = s.cells[i]
     if (f === faction) own.push(i)
-    else if (f > 0) {
+    else if (f === target) {
       ex += i % w
       ey += Math.floor(i / w)
       en++

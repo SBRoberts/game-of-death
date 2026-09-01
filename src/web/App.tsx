@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Duel, PLAYER, RIVAL, TUNING, patternById } from '../sim'
+import {
+  Duel,
+  PLAYER,
+  RIVAL,
+  WILDS,
+  TUNING,
+  patternById,
+  projectImpact,
+  rotateDir,
+  type Impact,
+} from '../sim'
 import { CELL, render, type Flash, type Ghost } from './render'
 import { Hand } from './Hand'
 
@@ -21,10 +31,21 @@ interface Hud {
   biomass: number
   playerPop: number
   rivalPop: number
+  wildsPop: number
   inset: number
   stormEta: number
   status: Duel['status']
   outcome: string
+}
+
+/** Default a traveler's rotation so its heading points at the rival. */
+function aimRotation(patternId: string): number {
+  const dir = patternById(patternId).dir
+  if (!dir) return 0
+  for (let r = 0; r < 4; r++) {
+    if (rotateDir(dir, r)[0] > 0) return r
+  }
+  return 0
 }
 
 export function App() {
@@ -94,10 +115,11 @@ export function App() {
       }
 
       const ghost = computeGhost()
+      const impact = ghost?.valid ? computeImpact(ghost) : null
       flashesRef.current = flashesRef.current
         .map((f) => ({ ...f, ttl: f.ttl - 1 }))
         .filter((f) => f.ttl > 0)
-      render(ctx, duel, ghost, flashesRef.current)
+      render(ctx, duel, ghost, impact, flashesRef.current)
 
       if (now - hudAt > 100) {
         hudAt = now
@@ -107,6 +129,7 @@ export function App() {
           biomass: Math.floor(duel.biomass[PLAYER]),
           playerPop: s.pops[PLAYER],
           rivalPop: s.pops[RIVAL],
+          wildsPop: s.pops[WILDS],
           inset: s.ringInset,
           stormEta: Math.max(0, duel.t.ringGrace - s.gen),
           status: duel.status,
@@ -122,10 +145,26 @@ export function App() {
       if (sel === null || !hover || duel.status !== 'running') return null
       const id = duel.hand[sel]
       if (!id) return null
-      const pattern = patternById(id)
-      const cells = duel.patternCells(pattern, hover.x, hover.y, rotationRef.current)
-      const valid = duel.biomass[PLAYER] >= pattern.cost && duel.canPlace(PLAYER, cells)
-      return { cells, valid }
+      const rot = rotationRef.current
+      const { pattern, cells, valid } = duel.ghostFor(PLAYER, id, hover.x, hover.y, rot)
+      const dir = pattern.dir ? rotateDir(pattern.dir, rot) : undefined
+      return { cells, valid, dir }
+    }
+
+    // Foresight is ~1ms of double-simulation; cache it per (spot, card, gen).
+    let impactKey = ''
+    let impactCache: Impact | null = null
+    const computeImpact = (ghost: Ghost): Impact | null => {
+      const hover = hoverRef.current
+      if (!hover) return null
+      const key = `${hover.x},${hover.y},${rotationRef.current},${duel.hand[selectedRef.current ?? -1]},${duel.state.gen}`
+      if (key !== impactKey) {
+        impactKey = key
+        impactCache = projectImpact(duel.state, PLAYER, ghost.cells, duel.t.foresightGens, (g) =>
+          duel.insetAt(g),
+        )
+      }
+      return impactCache
     }
 
     raf = requestAnimationFrame(frame)
@@ -186,6 +225,7 @@ export function App() {
           <span className="stat biomass">⬢ {hud?.biomass ?? 0}</span>
           <span className="stat you">you {hud?.playerPop ?? 0}</span>
           <span className="stat rival">rival {hud?.rivalPop ?? 0}</span>
+          <span className="stat wilds">wilds {hud?.wildsPop ?? 0}</span>
           <span className="stat storm">{stormLabel}</span>
         </div>
         <div className="hud-controls">
@@ -227,11 +267,19 @@ export function App() {
         biomass={hud?.biomass ?? 0}
         selected={selected}
         rotation={rotation}
-        onSelect={(i) => setSelected((cur) => (cur === i ? null : i))}
+        onSelect={(i) =>
+          setSelected((cur) => {
+            if (cur === i) return null
+            const id = duel.hand[i]
+            if (id) setRotation(aimRotation(id))
+            return i
+          })
+        }
       />
 
       <footer className="help">
         <span>click card → click board to seed</span>
+        <span>ghost previews the impact {TUNING.foresightGens} generations out</span>
         <span>right-click / R rotate</span>
         <span>space pause · 1–4 throttle</span>
         <span className="seed">seed {seed}</span>

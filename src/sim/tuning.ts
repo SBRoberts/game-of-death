@@ -9,16 +9,20 @@ export const TUNING = {
 
   // Economy: income accrues per generation, so running the throttle hot is
   // literally how you get rich (and how you get killed).
-  startBiomass: 20,
-  incomeBase: 0.25,
-  incomeScale: 0.05, // + incomeScale * sqrt(population) per generation
+  startBiomass: 24,
+  incomeBase: 0.12,
+  incomeScale: 0.03, // + incomeScale * sqrt(population) per generation
 
   // Placement: patterns may only be seeded near your living colony.
-  placementRadius: 8, // Chebyshev distance from any friendly cell
+  placementRadius: 10, // Chebyshev distance from any friendly cell
   handSize: 3,
 
   // Faction physics.
   flankingMargin: 2, // enemy − friendly ≥ 2 → the cell defects
+  casualtyMargin: 1, // enemy − friendly ≥ 1 → the cell dies contested
+
+  // Foresight: the placement ghost previews this many generations of impact.
+  foresightGens: 24,
 
   // Entropy storm: after a grace period, the board edges begin to die inward.
   ringGrace: 400, // generations before the storm starts
@@ -30,14 +34,18 @@ export const TUNING = {
   genLimit: 20000, // hard safety stop → territory scoring
 
   // Rival AI.
-  aiActEvery: 25, // generations between rival placement attempts
+  aiActEvery: 20, // generations between rival placement attempts
 
   // Colony seeding.
-  seedBlobRadius: 9,
-  seedDensity: 0.38,
+  seedBlobRadius: 7,
+  seedDensity: 0.45,
+
+  // Neutral debris scattered through the midfield: obstacles, cover, and
+  // capturable matter (flank a wild cell and it defects to you).
+  wildsCount: 36,
 
   // Throttle stops, generations per second (index 0 = paused).
   speeds: [0, 4, 8, 16, 32],
-} as const
+}
 
 export type Tuning = typeof TUNING

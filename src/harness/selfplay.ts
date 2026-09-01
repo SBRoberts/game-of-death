@@ -9,6 +9,10 @@
 
 import { Duel, PLAYER, RIVAL, aiAct, rngFrom, stateHash } from '../sim'
 
+const playerPolicy = (d: Duel, rng: ReturnType<typeof rngFrom>): void => {
+  if (d.state.gen % d.t.aiActEvery === 0) aiAct(d, PLAYER, rng, RIVAL)
+}
+
 const nDuels = Number(process.argv[2] ?? 40)
 
 // Determinism audit first: an identical seed must replay identically.
@@ -18,7 +22,7 @@ const nDuels = Number(process.argv[2] ?? 40)
     const rng = rngFrom(seed, 'player-policy')
     while (d.status === 'running' && d.state.gen < 6000) {
       d.tick()
-      if (d.state.gen % d.t.aiActEvery === 0) aiAct(d, PLAYER, rng)
+      playerPolicy(d, rng)
     }
     return stateHash(d.state)
   }
@@ -42,7 +46,7 @@ for (let i = 0; i < nDuels; i++) {
   const rng = rngFrom(seed, 'player-policy')
   while (d.status === 'running' && d.state.gen < 6000) {
     d.tick()
-    if (d.state.gen % d.t.aiActEvery === 0) aiAct(d, PLAYER, rng)
+    playerPolicy(d, rng)
   }
   if (d.status === 'won') wins++
   else losses++

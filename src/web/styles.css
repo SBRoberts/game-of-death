@@ -69,6 +69,10 @@ body {
   color: var(--rival);
 }
 
+.stat.wilds {
+  color: #7c889c;
+}
+
 .stat.storm {
   color: #ff8a70;
 }

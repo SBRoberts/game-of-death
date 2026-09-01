@@ -28,6 +28,11 @@ export interface SimConfig {
   factions: Faction[]
   /** A live cell defects when enemy − friendly neighbors ≥ this margin. */
   flankingMargin: number
+  /**
+   * Below the flanking margin, a live cell still dies as a casualty when
+   * enemy − friendly ≥ this. Overwhelming force assimilates; skirmishes bleed.
+   */
+  casualtyMargin: number
 }
 
 export interface SimState {

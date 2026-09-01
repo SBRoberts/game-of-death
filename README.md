@@ -8,21 +8,30 @@ edges of the universe.
 
 ## How it plays
 
-Two colonies of B3/S23 life share one board. On top of Conway's rules sit two
-faction interactions:
+Two colonies of B3/S23 life share one board with a neutral **wilds** debris
+field between them — cover, obstacles, and capturable matter. On top of
+Conway's rules sit three faction interactions:
 
 - **Recruitment** — a newborn cell joins the strictly dominant neighboring
   faction (ties abort the birth).
 - **Flanking** — a live cell whose enemy neighbors outnumber its friends by 2+
-  defects on the spot.
+  defects on the spot. Overwhelming force assimilates — this is also how you
+  capture wilds.
+- **Casualties** — outnumbered by just 1, the cell dies instead. Skirmish
+  fronts bleed and churn rather than feeding the winner.
 
 You interact through three levers:
 
 - **The throttle** (pause–8×). Biomass income accrues *per generation*, so
   running hot is how you get rich — and how you die unwatched.
 - **The hand.** Three pattern cards (gliders, eaters, spaceships, the
-  R-Pentomino…) placeable within 8 cells of your living colony. Right-click or
-  `R` rotates. Plan while paused; pay in biomass.
+  R-Pentomino…) placeable within 10 cells of your living colony. Travelers
+  need open ground to launch — ash corrupts them. Right-click or `R` rotates;
+  travelers auto-aim at the rival on select. Plan while paused; pay in biomass.
+- **Foresight.** The placement ghost double-simulates the next 24 generations
+  and shows the *causal impact* of the placement you're hovering — cells you'd
+  gain in teal, enemy futures you'd disrupt in red. Every card visibly does
+  something different before you pay for it.
 - **The storm.** After 400 generations the board edges begin to die inward.
   Extinction ends the duel; if the storm closes first, territory decides — and
   the house wins ties.

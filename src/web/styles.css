@@ -61,6 +61,12 @@ body {
   color: var(--gold);
 }
 
+.stat.biomass em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.65;
+}
+
 .stat.you {
   color: var(--you);
 }
@@ -133,12 +139,37 @@ canvas {
   background: rgba(7, 9, 13, 0.82);
   border-radius: 8px;
   line-height: 1.5;
+  animation: overlay-in 420ms ease-out;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .overlay .verdict {
   font-size: 34px;
   letter-spacing: 0.4em;
   font-weight: 700;
+  animation: verdict-in 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes verdict-in {
+  from {
+    letter-spacing: 1.1em;
+    opacity: 0;
+    transform: scale(1.15);
+  }
+  to {
+    letter-spacing: 0.4em;
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .overlay.won .verdict {
@@ -169,11 +200,27 @@ canvas {
   width: 150px;
   padding: 10px 8px;
   text-align: center;
+  transition: transform 130ms ease, border-color 130ms, box-shadow 130ms;
+}
+
+.card:hover:not(:disabled) {
+  transform: translateY(-3px);
 }
 
 .card.selected {
   border-color: var(--you);
-  box-shadow: 0 0 12px rgba(60, 232, 200, 0.15);
+  transform: translateY(-3px);
+  animation: card-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes card-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(60, 232, 200, 0.14);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(60, 232, 200, 0.3);
+  }
 }
 
 .card.poor {

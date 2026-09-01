@@ -46,6 +46,14 @@ Key selectors / inputs:
 7. `n` → fresh seed, gen resets.
 8. Zero console errors expected (`page.on('console'/'pageerror')`).
 
+## Recording game-feel
+
+`page.screencast({ path: 'clip.webm' })` works with puppeteer-core + system
+Chrome — start it after load, stop before close, keep clips ~30s. Move the
+mouse with `{ steps: N }` so hovers read naturally on video. SFX are WebAudio
+and inaudible headless; verify audio wiring by checking zero console errors on
+select/place/invalid/storm/win paths.
+
 ## Gotchas
 
 - The claude-in-chrome extension may be disconnected; puppeteer-core is the

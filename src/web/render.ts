@@ -42,18 +42,77 @@ export interface Flash {
   ttl: number
 }
 
+export interface Pulse {
+  x: number
+  y: number
+  ttl: number
+  max: number
+}
+
+export interface FxState {
+  pulses: Pulse[]
+  hoverCell: { x: number; y: number } | null
+  now: number
+  /** 0..1 red vignette when the storm first bites. */
+  stormFlash: number
+}
+
+// Cheap bloom: live cells rendered 1px each into an offscreen buffer, then
+// upscaled with smoothing under the crisp pass — a soft phosphor halo.
+let bloomCanvas: HTMLCanvasElement | null = null
+let bloomImage: ImageData | null = null
+const BLOOM_RGB: Record<number, [number, number, number]> = {
+  [PLAYER]: [60, 232, 200],
+  [RIVAL]: [255, 85, 112],
+  [WILDS]: [124, 136, 156],
+}
+
+function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, h: number): void {
+  if (!bloomCanvas || bloomCanvas.width !== w || bloomCanvas.height !== h) {
+    bloomCanvas = document.createElement('canvas')
+    bloomCanvas.width = w
+    bloomCanvas.height = h
+    bloomImage = null
+  }
+  const bctx = bloomCanvas.getContext('2d')
+  if (!bctx) return
+  bloomImage ??= bctx.createImageData(w, h)
+  const px = bloomImage.data
+  px.fill(0)
+  for (let i = 0; i < cells.length; i++) {
+    const f = cells[i]
+    if (f > 0) {
+      const rgb = BLOOM_RGB[f] ?? BLOOM_RGB[WILDS]
+      const o = i * 4
+      px[o] = rgb[0]
+      px[o + 1] = rgb[1]
+      px[o + 2] = rgb[2]
+      px[o + 3] = 255
+    }
+  }
+  bctx.putImageData(bloomImage, 0, 0)
+  ctx.save()
+  ctx.imageSmoothingEnabled = true
+  ctx.globalAlpha = 0.42
+  ctx.drawImage(bloomCanvas, 0, 0, w * CELL, h * CELL)
+  ctx.restore()
+}
+
 export function render(
   ctx: CanvasRenderingContext2D,
   duel: Duel,
   ghost: Ghost | null,
   impact: Impact | null,
   flashes: Flash[],
+  fx: FxState,
 ): void {
   const s = duel.state
   const { width: w, height: h } = s.cfg
 
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, w * CELL, h * CELL)
+
+  drawBloom(ctx, s.cells, w, h)
 
   // Ash: alive last generation, dead now — tinted by who died there.
   for (let i = 0; i < s.cells.length; i++) {
@@ -80,7 +139,9 @@ export function render(
     ctx.fillRect(0, (h - inset) * CELL, w * CELL, inset * CELL)
     ctx.fillRect(0, inset * CELL, inset * CELL, (h - 2 * inset) * CELL)
     ctx.fillRect((w - inset) * CELL, inset * CELL, inset * CELL, (h - 2 * inset) * CELL)
-    ctx.strokeStyle = COLORS.stormEdge
+    // Breathing storm boundary.
+    const pulse = 0.26 + 0.16 * Math.sin(fx.now / 260)
+    ctx.strokeStyle = `rgba(255,90,90,${pulse.toFixed(3)})`
     ctx.lineWidth = 1
     ctx.strokeRect(
       inset * CELL + 0.5,
@@ -88,6 +149,12 @@ export function render(
       (w - 2 * inset) * CELL - 1,
       (h - 2 * inset) * CELL - 1,
     )
+  }
+
+  // Red vignette flash when the storm first bites.
+  if (fx.stormFlash > 0.01) {
+    ctx.fillStyle = `rgba(255,60,60,${(fx.stormFlash * 0.22).toFixed(3)})`
+    ctx.fillRect(0, 0, w * CELL, h * CELL)
   }
 
   // Foresight: the causal diff of the hovered placement, N generations out.
@@ -143,6 +210,26 @@ export function render(
     ctx.fillStyle = `${COLORS.flash}${(flash.ttl / 12) * 0.9})`
     for (const [x, y] of flash.cells) {
       ctx.fillRect(x * CELL, y * CELL, CELL - 1, CELL - 1)
+    }
+  }
+
+  // Placement pulses: an expanding ring from the seed site.
+  for (const p of fx.pulses) {
+    const t = 1 - p.ttl / p.max
+    ctx.strokeStyle = `rgba(60,232,200,${(0.55 * (1 - t)).toFixed(3)})`
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(p.x * CELL, p.y * CELL, CELL * (0.8 + t * 3.4), 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  // Hover crosshair cell when nothing is selected — the board answers touch.
+  if (fx.hoverCell && !ghost) {
+    const { x, y } = fx.hoverCell
+    if (x >= 0 && x < w && y >= 0 && y < h) {
+      ctx.strokeStyle = 'rgba(230,240,255,0.28)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(x * CELL + 0.5, y * CELL + 0.5, CELL - 2, CELL - 2)
     }
   }
 }

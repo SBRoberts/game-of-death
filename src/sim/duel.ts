@@ -9,7 +9,7 @@ import { PATTERNS, WILD_SHAPES, patternById, placeAt, rotate, type Pattern } fro
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, type SimState } from './types'
-import { aiAct } from './ai'
+import { aiAct, smartAct } from './ai'
 
 export const PLAYER = 1
 export const RIVAL = 2
@@ -69,9 +69,15 @@ export class Duel {
         Math.floor(w * 0.34 + rng() * w * 0.32),
         4 + pickInt(rng, h - 12),
       )
+      // Require an empty 1-cell margin so debris seeds don't touch and bloom.
       const clear = cells.every(([x, y]) => {
-        if (x < 1 || x >= w - 1 || y < 1 || y >= h - 1) return false
-        return this.state.cells[y * w + x] === 0
+        if (x < 2 || x >= w - 2 || y < 2 || y >= h - 2) return false
+        for (let yy = y - 1; yy <= y + 1; yy++) {
+          for (let xx = x - 1; xx <= x + 1; xx++) {
+            if (this.state.cells[yy * w + xx] !== 0) return false
+          }
+        }
+        return true
       })
       if (clear) setCells(this.state, WILDS, cells)
     }
@@ -117,7 +123,11 @@ export class Duel {
     this.biomass[RIVAL] += this.income(RIVAL)
 
     if (this.autoRival && s.gen % this.t.aiActEvery === 0) {
-      aiAct(this, RIVAL, this.rivalRng, PLAYER)
+      if (this.t.rivalSmart) {
+        smartAct(this, RIVAL, this.rivalRng, PLAYER, this.t.aiSamples, this.t.aiHorizon)
+      } else {
+        aiAct(this, RIVAL, this.rivalRng, PLAYER)
+      }
     }
 
     if (s.gen > this.t.warmupGens) {

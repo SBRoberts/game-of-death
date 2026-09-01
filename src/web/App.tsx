@@ -10,8 +10,9 @@ import {
   rotateDir,
   type Impact,
 } from '../sim'
-import { CELL, render, type Flash, type Ghost } from './render'
+import { CELL, render, type Flash, type Ghost, type Pulse } from './render'
 import { Hand } from './Hand'
+import { sfx } from './audio'
 
 const SPEEDS = TUNING.speeds // generations per second per throttle stop
 const SPEED_LABELS = ['⏸', '1×', '2×', '4×', '8×']
@@ -29,6 +30,7 @@ function initialSeed(): string {
 interface Hud {
   gen: number
   biomass: number
+  rate: string
   playerPop: number
   rivalPop: number
   wildsPop: number
@@ -61,6 +63,9 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hoverRef = useRef<{ x: number; y: number } | null>(null)
   const flashesRef = useRef<Flash[]>([])
+  const pulsesRef = useRef<Pulse[]>([])
+  const stormFlashRef = useRef(0)
+  const [muted, setMuted] = useState(sfx.muted)
   const speedRef = useRef(speedIdx)
   const selectedRef = useRef(selected)
   const rotationRef = useRef(rotation)
@@ -97,6 +102,8 @@ export function App() {
     let last = performance.now()
     let acc = 0
     let hudAt = 0
+    let prevInset = duel.state.ringInset
+    let prevStatus = duel.status
 
     const frame = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000)
@@ -114,12 +121,32 @@ export function App() {
         acc = 0
       }
 
+      // Event edges: the storm's first bite, and the duel's verdict.
+      if (prevInset === 0 && duel.state.ringInset > 0) {
+        stormFlashRef.current = 1
+        sfx.play('storm')
+      }
+      prevInset = duel.state.ringInset
+      if (prevStatus === 'running' && duel.status !== 'running') {
+        sfx.play(duel.status === 'won' ? 'win' : 'lose')
+      }
+      prevStatus = duel.status
+      stormFlashRef.current *= 0.955
+
       const ghost = computeGhost()
       const impact = ghost?.valid ? computeImpact(ghost) : null
       flashesRef.current = flashesRef.current
         .map((f) => ({ ...f, ttl: f.ttl - 1 }))
         .filter((f) => f.ttl > 0)
-      render(ctx, duel, ghost, impact, flashesRef.current)
+      pulsesRef.current = pulsesRef.current
+        .map((p) => ({ ...p, ttl: p.ttl - 1 }))
+        .filter((p) => p.ttl > 0)
+      render(ctx, duel, ghost, impact, flashesRef.current, {
+        pulses: pulsesRef.current,
+        hoverCell: ghost ? null : hoverRef.current,
+        now,
+        stormFlash: stormFlashRef.current,
+      })
 
       if (now - hudAt > 100) {
         hudAt = now
@@ -127,6 +154,7 @@ export function App() {
         setHud({
           gen: s.gen,
           biomass: Math.floor(duel.biomass[PLAYER]),
+          rate: (duel.income(PLAYER) * SPEEDS[speedRef.current]).toFixed(1),
           playerPop: s.pops[PLAYER],
           rivalPop: s.pops[RIVAL],
           wildsPop: s.pops[WILDS],
@@ -190,7 +218,15 @@ export function App() {
     if (selected === null) return
     const { x, y } = cellFromEvent(e)
     const placed = duel.playCard(selected, x, y, rotation)
-    if (placed) flashesRef.current.push({ cells: placed, ttl: 12 })
+    if (placed) {
+      flashesRef.current.push({ cells: placed, ttl: 12 })
+      const cx = placed.reduce((a, [px]) => a + px, 0) / placed.length + 0.5
+      const cy = placed.reduce((a, [, py]) => a + py, 0) / placed.length + 0.5
+      pulsesRef.current.push({ x: cx, y: cy, ttl: 22, max: 22 })
+      sfx.play('place')
+    } else {
+      sfx.play('invalid')
+    }
   }
 
   const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -222,7 +258,9 @@ export function App() {
         <h1>THE GAME OF DEATH</h1>
         <div className="hud-stats">
           <span className="stat">gen {hud?.gen ?? 0}</span>
-          <span className="stat biomass">⬢ {hud?.biomass ?? 0}</span>
+          <span className="stat biomass">
+            ⬢ {hud?.biomass ?? 0} <em>+{hud?.rate ?? '0.0'}/s</em>
+          </span>
           <span className="stat you">you {hud?.playerPop ?? 0}</span>
           <span className="stat rival">rival {hud?.rivalPop ?? 0}</span>
           <span className="stat wilds">wilds {hud?.wildsPop ?? 0}</span>
@@ -240,6 +278,13 @@ export function App() {
           ))}
           <button className="newrun" onClick={newRun}>
             new run
+          </button>
+          <button
+            className="mute"
+            title={muted ? 'unmute' : 'mute'}
+            onClick={() => setMuted(sfx.toggle())}
+          >
+            {muted ? '🔇' : '🔊'}
           </button>
         </div>
       </header>
@@ -271,7 +316,10 @@ export function App() {
           setSelected((cur) => {
             if (cur === i) return null
             const id = duel.hand[i]
-            if (id) setRotation(aimRotation(id))
+            if (id) {
+              setRotation(aimRotation(id))
+              sfx.play('select')
+            }
             return i
           })
         }

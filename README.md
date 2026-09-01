@@ -39,6 +39,24 @@ You interact through three levers:
 Runs are fully deterministic per seed (`?seed=...` in the URL). Same seed, same
 actions, same universe, every time.
 
+## The proof
+
+`npm run harness` pits a **planner** policy (samples placements, scores each
+with the same Foresight projection the player sees, plays the best) against a
+**random** policy over seeded duels, with act order alternated to remove
+first-mover bias. Current result at n=48 per matchup:
+
+```
+planner vs random    71% player wins
+random  vs random    38% player wins   ← structural baseline (ties favor rival)
+planner vs planner   56% player wins
+
+core-mechanics proof: planning is worth +33 points of winrate over random play
+```
+
+The +33-point edge over the shared baseline (~3σ) is the game's core claim,
+stated as a number: under these mechanics, better planning reliably wins.
+
 ## Architecture
 
 ```
@@ -81,6 +99,6 @@ src/harness/  Headless self-play (npm run harness). The seed of the
 | ------------------- | ------------------------------------------- |
 | `npm run dev`       | Dev server                                  |
 | `npm test`          | Sim ground-truth tests (vitest)             |
-| `npm run harness`   | Headless self-play + determinism audit      |
+| `npm run harness`   | Policy-matchup proof + determinism audit    |
 | `npm run typecheck` | Strict TS across sim/web/harness            |
 | `npm run build`     | Static production build (itch.io-shippable) |

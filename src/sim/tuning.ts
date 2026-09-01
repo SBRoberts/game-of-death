@@ -35,6 +35,9 @@ export const TUNING = {
 
   // Rival AI.
   aiActEvery: 20, // generations between rival placement attempts
+  rivalSmart: true, // rival uses the Foresight planner instead of random seeding
+  aiSamples: 6, // candidate placements the planner scores per act
+  aiHorizon: 16, // Foresight generations per candidate score
 
   // Colony seeding.
   seedBlobRadius: 7,

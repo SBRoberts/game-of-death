@@ -5,6 +5,7 @@ import {
   RIVAL,
   WILDS,
   TUNING,
+  impactScore,
   patternById,
   projectImpact,
   rotateDir,
@@ -38,6 +39,16 @@ interface Hud {
   stormEta: number
   status: Duel['status']
   outcome: string
+  hint: string | null
+  grade: 'poor' | 'fair' | 'good' | 'great' | null
+}
+
+const PROBLEM_TEXT: Record<string, string> = {
+  storm: 'outside the safe zone',
+  occupied: 'blocked by live cells',
+  far: 'too far from your colony',
+  blocked: 'needs open ground — clear of ash',
+  poor: 'not enough biomass',
 }
 
 /** Default a traveler's rotation so its heading points at the rival. */
@@ -104,6 +115,8 @@ export function App() {
     let hudAt = 0
     let prevInset = duel.state.ringInset
     let prevStatus = duel.status
+    let hintText: string | null = null
+    let hintGrade: Hud['grade'] = null
 
     const frame = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000)
@@ -135,6 +148,29 @@ export function App() {
 
       const ghost = computeGhost()
       const impact = ghost?.valid ? computeImpact(ghost) : null
+
+      // Live placement hint: the planner's own evaluation of the hovered spot.
+      hintText = null
+      hintGrade = null
+      if (ghost) {
+        if (!ghost.valid) {
+          hintText = PROBLEM_TEXT[ghost.problem] ?? null
+        } else if (impact) {
+          const cells = duel.state.cells
+          let rivalHit = 0
+          let wildsTouched = 0
+          for (const i of impact.destroyed) {
+            if (cells[i] === RIVAL) rivalHit++
+            else if (cells[i] === WILDS) wildsTouched++
+          }
+          for (const i of impact.gained) if (cells[i] === WILDS) wildsTouched++
+          const score = impactScore(cells, impact, RIVAL, ghost.cost)
+          const ratio = score / ghost.cost
+          hintGrade = ratio < 0 ? 'poor' : ratio < 0.5 ? 'fair' : ratio < 1.5 ? 'good' : 'great'
+          hintText = `+${impact.gained.length} you · −${rivalHit} rival · ${wildsTouched} wilds`
+        }
+      }
+
       flashesRef.current = flashesRef.current
         .map((f) => ({ ...f, ttl: f.ttl - 1 }))
         .filter((f) => f.ttl > 0)
@@ -162,21 +198,24 @@ export function App() {
           stormEta: Math.max(0, duel.t.ringGrace - s.gen),
           status: duel.status,
           outcome: duel.outcome,
+          hint: hintText,
+          grade: hintGrade,
         })
       }
       raf = requestAnimationFrame(frame)
     }
 
-    const computeGhost = (): Ghost | null => {
+    type GhostInfo = Ghost & { problem: string; cost: number }
+    const computeGhost = (): GhostInfo | null => {
       const sel = selectedRef.current
       const hover = hoverRef.current
       if (sel === null || !hover || duel.status !== 'running') return null
       const id = duel.hand[sel]
       if (!id) return null
       const rot = rotationRef.current
-      const { pattern, cells, valid } = duel.ghostFor(PLAYER, id, hover.x, hover.y, rot)
+      const { pattern, cells, valid, problem } = duel.ghostFor(PLAYER, id, hover.x, hover.y, rot)
       const dir = pattern.dir ? rotateDir(pattern.dir, rot) : undefined
-      return { cells, valid, dir }
+      return { cells, valid, dir, problem, cost: pattern.cost }
     }
 
     // Foresight is ~1ms of double-simulation; cache it per (spot, card, gen).
@@ -290,6 +329,12 @@ export function App() {
       </header>
 
       <div className="board-wrap">
+        {hud?.hint && (
+          <div className={`impact-readout ${hud.grade ?? 'problem'}`}>
+            {hud.hint}
+            {hud.grade && <b>{hud.grade}</b>}
+          </div>
+        )}
         <canvas
           ref={canvasRef}
           style={{ width: duel.t.width * CELL, maxWidth: '100%', aspectRatio: `${duel.t.width} / ${duel.t.height}` }}

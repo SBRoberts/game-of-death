@@ -8,9 +8,26 @@
  */
 
 import type { Duel } from './duel'
-import { projectImpact } from './foresight'
+import { projectImpact, type Impact } from './foresight'
 import { PATTERNS, rotateDir, type Pattern } from './patterns'
 import { pickInt, type Rng } from './rng'
+
+/**
+ * One evaluation for placements, shared by the planner AI and the UI's
+ * placement hint: disrupting the target's future counts most, growth counts
+ * some, and the biomass cost is a tax. Positive means worth playing.
+ */
+export function impactScore(
+  cells: Uint8Array,
+  impact: Impact,
+  target: number,
+  cost: number,
+): number {
+  let score = -cost * 0.4
+  for (const i of impact.destroyed) score += cells[i] === target ? 3 : 0.5
+  score += impact.gained.length * 0.4
+  return score
+}
 
 interface Scan {
   own: number[]
@@ -112,9 +129,7 @@ export function smartAct(
     if (!duel.canPlace(faction, cells, pattern.clearance)) continue
 
     const impact = projectImpact(s, faction, cells, horizon, (g) => duel.insetAt(g))
-    let score = -pattern.cost * 0.4
-    for (const i of impact.destroyed) score += s.cells[i] === target ? 3 : 0.5
-    score += impact.gained.length * 0.4
+    const score = impactScore(s.cells, impact, target, pattern.cost)
     if (!best || score > best.score) best = { pattern, ox, oy, rot, score }
   }
   if (best && best.score > 0) {

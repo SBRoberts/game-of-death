@@ -128,6 +128,48 @@ canvas {
   image-rendering: pixelated;
 }
 
+.impact-readout {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  background: rgba(13, 17, 24, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.impact-readout b {
+  margin-left: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.impact-readout.problem {
+  color: #ff9f8a;
+}
+
+.impact-readout.poor b {
+  color: var(--dim);
+}
+
+.impact-readout.fair b {
+  color: var(--text);
+}
+
+.impact-readout.good b {
+  color: var(--you);
+}
+
+.impact-readout.great b {
+  color: var(--gold);
+}
+
 .overlay {
   position: absolute;
   inset: 0;
@@ -236,7 +278,43 @@ canvas {
   font-weight: 600;
 }
 
+.card-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .card-cost {
+  color: var(--gold);
+}
+
+.card-role {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 9px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+.role-hold {
+  color: #9db2d0;
+}
+
+.role-grow {
+  color: var(--you);
+}
+
+.role-strike {
+  color: var(--rival);
+}
+
+.role-guard {
+  color: #6ea8ff;
+}
+
+.role-bomb {
   color: var(--gold);
 }
 

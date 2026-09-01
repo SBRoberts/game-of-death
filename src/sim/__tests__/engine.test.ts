@@ -160,6 +160,18 @@ describe('duel: launch clearance', () => {
     const clear = d.patternCells(glider, 35, 38, 0) // open ground, in influence
     expect(d.canPlace(1, clear, glider.clearance)).toBe(true)
   })
+
+  it('names the rejection reason', () => {
+    const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, wildsCount: 0 })
+    const glider = patternById('glider')
+    const block = patternById('block')
+    const onColony = d.patternCells(block, 27, 40, 0)
+    expect(d.placeProblem(1, onColony, 0)).toBe('occupied')
+    const farCorner = d.patternCells(block, d.t.width - 6, 3, 0)
+    expect(d.placeProblem(1, farCorner, 0)).toBe('far')
+    const snug = d.patternCells(glider, 32, 39, 0)
+    expect(d.placeProblem(1, snug, glider.clearance)).toBe('blocked')
+  })
 })
 
 describe('duel: rules of play', () => {

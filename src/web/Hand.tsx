@@ -39,8 +39,11 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
               ))}
             </svg>
             <span className="card-name">{p.name}</span>
-            <span className="card-cost">⬢ {p.cost}</span>
-            <span className="card-blurb">{p.blurb}</span>
+            <span className="card-meta">
+              <span className="card-cost">⬢ {p.cost}</span>
+              <span className={`card-role role-${p.role}`}>{p.role}</span>
+            </span>
+            <span className="card-blurb">{p.tip}</span>
           </button>
         )
       })}

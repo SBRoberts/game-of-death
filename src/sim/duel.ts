@@ -151,21 +151,22 @@ export class Duel {
     return placeAt(rotate(pattern.cells, rot), ox, oy)
   }
 
-  canPlace(
+  /** Why a placement is illegal — 'ok' means it isn't. */
+  placeProblem(
     faction: number,
     cells: ReadonlyArray<readonly [number, number]>,
     clearance = 0,
-  ): boolean {
+  ): 'ok' | 'storm' | 'occupied' | 'far' | 'blocked' {
     const s = this.state
     const { width: w, height: h } = s.cfg
     const inset = s.ringInset
     let nearColony = false
     for (const [x, y] of cells) {
-      if (x < inset || x >= w - inset || y < inset || y >= h - inset) return false
-      if (s.cells[y * w + x] !== 0) return false // no overwriting live cells
+      if (x < inset || x >= w - inset || y < inset || y >= h - inset) return 'storm'
+      if (s.cells[y * w + x] !== 0) return 'occupied' // no overwriting live cells
       if (!nearColony && this.withinInfluence(faction, x, y)) nearColony = true
     }
-    if (!nearColony) return false
+    if (!nearColony) return 'far'
     if (clearance > 0) {
       // Travelers need open ground, or the surrounding ash corrupts them.
       const own = new Set(cells.map(([x, y]) => y * w + x))
@@ -173,29 +174,46 @@ export class Duel {
         for (let yy = Math.max(0, y - clearance); yy <= Math.min(h - 1, y + clearance); yy++) {
           for (let xx = Math.max(0, x - clearance); xx <= Math.min(w - 1, x + clearance); xx++) {
             const i = yy * w + xx
-            if (s.cells[i] !== 0 && !own.has(i)) return false
+            if (s.cells[i] !== 0 && !own.has(i)) return 'blocked'
           }
         }
       }
     }
-    return true
+    return 'ok'
   }
 
-  /** Ghost info for the UI: absolute cells + whether the placement is legal now. */
+  canPlace(
+    faction: number,
+    cells: ReadonlyArray<readonly [number, number]>,
+    clearance = 0,
+  ): boolean {
+    return this.placeProblem(faction, cells, clearance) === 'ok'
+  }
+
+  /** Ghost info for the UI: cells, legality, and the reason when illegal. */
   ghostFor(
     faction: number,
     patternId: string,
     ox: number,
     oy: number,
     rot: number,
-  ): { pattern: Pattern; cells: Array<[number, number]>; valid: boolean } {
+  ): {
+    pattern: Pattern
+    cells: Array<[number, number]>
+    valid: boolean
+    problem: 'ok' | 'storm' | 'occupied' | 'far' | 'blocked' | 'poor'
+  } {
     const pattern = patternById(patternId)
     const cells = this.patternCells(pattern, ox, oy, rot)
-    const valid =
-      this.status === 'running' &&
-      this.biomass[faction] >= pattern.cost &&
-      this.canPlace(faction, cells, pattern.clearance)
-    return { pattern, cells, valid }
+    let problem = this.placeProblem(faction, cells, pattern.clearance) as
+      | 'ok'
+      | 'storm'
+      | 'occupied'
+      | 'far'
+      | 'blocked'
+      | 'poor'
+    if (problem === 'ok' && this.biomass[faction] < pattern.cost) problem = 'poor'
+    return { pattern, cells, valid: this.status === 'running' && problem === 'ok', problem }
   }
 
   private withinInfluence(faction: number, x: number, y: number): boolean {

@@ -344,3 +344,160 @@ canvas {
 .help .seed {
   color: #45536b;
 }
+
+.ash-earned {
+  color: var(--gold);
+  font-size: 15px;
+}
+
+.ash-earned span {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.overlay-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.genome-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 9, 0.72);
+}
+
+.genome {
+  width: min(680px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: overlay-in 240ms ease-out;
+}
+
+.genome header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.genome h2 {
+  font-size: 14px;
+  letter-spacing: 0.3em;
+}
+
+.genome-ash {
+  color: var(--gold);
+}
+
+.genome-close {
+  margin-left: auto;
+}
+
+.genome-slots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slot {
+  font-size: 18px;
+  color: var(--dim);
+}
+
+.slot.open {
+  color: var(--you);
+}
+
+.slot.locked {
+  opacity: 0.4;
+}
+
+.buy-slot {
+  margin-left: 6px;
+}
+
+.slot-note {
+  color: var(--dim);
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.genome-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.gene {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0.85;
+}
+
+.gene.owned {
+  opacity: 1;
+}
+
+.gene.on {
+  border-color: var(--you);
+}
+
+.gene-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gene-name {
+  font-weight: 600;
+}
+
+.gene-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 1px 7px;
+  border-radius: 9px;
+  border: 1px solid currentColor;
+}
+
+.kind-rule {
+  color: #9db2d0;
+}
+
+.kind-card {
+  color: var(--gold);
+}
+
+.gene p {
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+  flex: 1;
+}
+
+.gene button.equipped {
+  border-color: var(--you);
+  color: var(--you);
+}
+
+.genome footer {
+  color: var(--dim);
+  font-size: 11px;
+  text-align: center;
+}

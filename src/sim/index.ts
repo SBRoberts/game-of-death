@@ -1,4 +1,6 @@
 export * from './types'
+export * from './celltypes'
+export * from './genes'
 export * from './rng'
 export * from './tuning'
 export * from './engine'

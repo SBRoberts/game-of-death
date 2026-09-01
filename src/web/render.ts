@@ -3,7 +3,7 @@
  * The sim's prev-generation buffer gives us free one-gen "ash" trails.
  */
 
-import { PLAYER, RIVAL, WILDS, type Duel } from '../sim'
+import { ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, WILDS, type Duel } from '../sim'
 import type { Impact } from '../sim'
 
 export const CELL = 8
@@ -128,6 +128,26 @@ export function render(
     if (f > 0) {
       ctx.fillStyle = FACTION_FILL[f] ?? COLORS.wilds
       ctx.fillRect((i % w) * CELL, Math.floor(i / w) * CELL, CELL - 1, CELL - 1)
+    }
+  }
+
+  // Special-cell markers: the cell's identity, drawn into its center.
+  for (let i = 0; i < s.types.length; i++) {
+    const t = s.types[i]
+    if (t === 0 || s.cells[i] === 0) continue
+    const x = (i % w) * CELL
+    const y = Math.floor(i / w) * CELL
+    if (t === VAMPIRE) {
+      ctx.fillStyle = '#b07aff'
+      ctx.fillRect(x, y, CELL - 1, CELL - 1)
+      ctx.fillStyle = '#1a0b2e'
+      ctx.fillRect(x + 2, y + 2, CELL - 5, CELL - 5)
+    } else if (t === ELDER) {
+      ctx.fillStyle = '#f4f8ff'
+      ctx.fillRect(x + 2, y + 2, CELL - 5, CELL - 5)
+    } else if (t === MARTYR) {
+      ctx.fillStyle = '#e8c463'
+      ctx.fillRect(x + 2, y + 2, CELL - 5, CELL - 5)
     }
   }
 

@@ -20,6 +20,8 @@ export interface Pattern {
   cells: ReadonlyArray<readonly [number, number]>
   clearance: number
   dir?: readonly [number, number]
+  /** Non-standard cell type (celltypes.ts) the cells are placed as. */
+  cellType?: number
 }
 
 export const PATTERNS: readonly Pattern[] = [
@@ -90,6 +92,43 @@ export const PATTERNS: readonly Pattern[] = [
   },
 ]
 
+/**
+ * Special uni-cells — single cells whose power is in the cell itself, not the
+ * shape. Not in the base deck: a card-gene must be equipped to draw them.
+ */
+export const SPECIAL_PATTERNS: readonly Pattern[] = [
+  {
+    id: 'elder',
+    name: 'Elder',
+    cost: 16,
+    role: 'hold',
+    tip: 'A single immortal cell. Ignores every death rule but the storm — the anchor your colony builds on.',
+    cells: [[0, 0]],
+    clearance: 0,
+    cellType: 1,
+  },
+  {
+    id: 'vampire',
+    name: 'Vampire',
+    cost: 20,
+    role: 'strike',
+    tip: 'Costs a fortune, feeds forever: converts one adjacent enemy every generation and never defects. Starves alone.',
+    cells: [[0, 0]],
+    clearance: 0,
+    cellType: 2,
+  },
+  {
+    id: 'martyr',
+    name: 'Martyr',
+    cost: 10,
+    role: 'guard',
+    tip: 'Lives like a normal cell, dies like a bomb — every adjacent enemy dies with it. Seed it where they must tread.',
+    cells: [[0, 0]],
+    clearance: 0,
+    cellType: 3,
+  },
+]
+
 /** Neutral debris shapes scattered through the midfield (not cards). */
 export const WILD_SHAPES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
   [[0, 0], [1, 0], [0, 1], [1, 1]], // block
@@ -98,7 +137,7 @@ export const WILD_SHAPES: ReadonlyArray<ReadonlyArray<readonly [number, number]>
 ]
 
 export const patternById = (id: string): Pattern => {
-  const p = PATTERNS.find((p) => p.id === id)
+  const p = PATTERNS.find((p) => p.id === id) ?? SPECIAL_PATTERNS.find((p) => p.id === id)
   if (!p) throw new Error(`unknown pattern: ${id}`)
   return p
 }

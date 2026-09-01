@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { ELDER, MARTYR, VAMPIRE } from '../celltypes'
 import { createState, setCells, step, stateHash } from '../engine'
 import { patternById, placeAt, rotate } from '../patterns'
-import { LIFE, type SimConfig, type SimState } from '../types'
+import { LIFE, mask, type SimConfig, type SimState } from '../types'
 import { Duel } from '../duel'
 
 const cfg = (over: Partial<SimConfig> = {}): SimConfig => ({
@@ -120,6 +121,70 @@ describe('engine: faction rules', () => {
     expect(s.cells[1 * 40 + 1]).toBe(0)
     expect(s.cells[20 * 40 + 20]).toBe(1)
     expect(s.pops[1]).toBe(4)
+  })
+})
+
+describe('engine: special cells', () => {
+  it('elder is immortal alone and among enemies (but not in the storm)', () => {
+    const s = createState(cfg())
+    setCells(s, 1, [[10, 10]], ELDER)
+    setCells(s, 2, [[9, 10], [11, 10], [10, 9], [10, 11]]) // surrounded
+    for (let i = 0; i < 6; i++) step(s)
+    expect(s.cells[10 * 40 + 10]).toBe(1)
+    expect(s.types[10 * 40 + 10]).toBe(ELDER)
+    s.ringInset = 15
+    step(s)
+    expect(s.cells[10 * 40 + 10]).toBe(0) // every forever has a clock
+  })
+
+  it('vampire converts an adjacent enemy and starves when alone', () => {
+    const s = createState(cfg())
+    setCells(s, 1, [[10, 10]], VAMPIRE)
+    setCells(s, 2, placeAt(patternById('block').cells, 11, 10)) // stable prey
+    step(s)
+    // One block cell now belongs to faction 1 (drained), vampire still stands.
+    expect(s.cells[10 * 40 + 10]).toBe(1)
+    expect(s.pops[1]).toBeGreaterThanOrEqual(2)
+
+    const lone = createState(cfg())
+    setCells(lone, 1, [[20, 20]], VAMPIRE)
+    step(lone)
+    expect(lone.cells[20 * 40 + 20]).toBe(0) // starved: non-standard death
+  })
+
+  it('martyr detonates on death, killing adjacent enemies', () => {
+    const s = createState(cfg())
+    setCells(s, 1, [[10, 10]], MARTYR) // no friends: dies of underpopulation...
+    setCells(s, 2, placeAt(patternById('block').cells, 12, 9)) // ...beside a block
+    // Martyr at (10,10) has neighbors (12,x)? No — block at 12..13 is not
+    // adjacent. Bring one enemy adjacent so the blast has a target:
+    setCells(s, 2, [[11, 10]])
+    step(s)
+    expect(s.cells[10 * 40 + 10]).toBe(0) // martyr died
+    expect(s.cells[10 * 40 + 11]).toBe(0) // and took the adjacent enemy along
+  })
+})
+
+describe('duel: genome loadout', () => {
+  it('rule genes mutate the player faction; card genes extend the pool', () => {
+    const d = new Duel('loadout-test', {}, ['hardy', 'highlife', 'vampire'])
+    expect(d.state.cfg.factions[1].rule.survive & mask(4)).toBeTruthy()
+    expect(d.state.cfg.factions[1].rule.birth & mask(6)).toBeTruthy()
+    expect(d.state.cfg.factions[2].rule.survive & mask(4)).toBeFalsy() // rival untouched
+    expect(d.playerPool.some((p) => p.id === 'vampire')).toBe(true)
+
+    const vanilla = new Duel('loadout-test')
+    expect(vanilla.playerPool.some((p) => p.id === 'vampire')).toBe(false)
+  })
+
+  it('loadout runs stay deterministic', () => {
+    const a = new Duel('loadout-det', {}, ['hardy', 'martyr'])
+    const b = new Duel('loadout-det', {}, ['hardy', 'martyr'])
+    for (let i = 0; i < 300; i++) {
+      a.tick()
+      b.tick()
+    }
+    expect(stateHash(a.state)).toBe(stateHash(b.state))
   })
 })
 

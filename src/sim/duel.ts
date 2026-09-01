@@ -6,9 +6,10 @@
 
 import { createState, setCells, step } from './engine'
 import { PATTERNS, WILD_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
+import { geneByKey } from './genes'
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
-import { LIFE, type SimState } from './types'
+import { LIFE, mask, type Rule, type SimState } from './types'
 import { aiAct, smartAct } from './ai'
 
 export const PLAYER = 1
@@ -28,19 +29,37 @@ export class Duel {
   outcome = ''
   /** When true, the rival plays itself inside tick(); harness can disable. */
   autoRival = true
+  /** Equipped gene keys, applied at construction. */
+  readonly loadout: readonly string[]
+  /** The player's draw pool: base deck plus unlocked special cards. */
+  readonly playerPool: readonly Pattern[]
 
   private drawRng: Rng
   private rivalRng: Rng
 
-  constructor(seed: string, overrides: Partial<Tuning> = {}) {
+  constructor(seed: string, overrides: Partial<Tuning> = {}, loadout: readonly string[] = []) {
     this.seed = seed
-    this.t = { ...TUNING, ...overrides }
+    this.loadout = loadout
+    const genes = loadout.map(geneByKey)
+
+    let t = { ...TUNING, ...overrides }
+    const playerRule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
+    const pool: Pattern[] = [...PATTERNS]
+    for (const g of genes) {
+      if (g.addSurvive) playerRule.survive |= mask(...g.addSurvive)
+      if (g.addBirth) playerRule.birth |= mask(...g.addBirth)
+      if (g.tuning) t = { ...t, ...g.tuning }
+      if (g.card) pool.push(patternById(g.card))
+    }
+    this.t = t
+    this.playerPool = pool
+
     this.state = createState({
       width: this.t.width,
       height: this.t.height,
       factions: [
         { name: 'dead', rule: LIFE },
-        { name: 'you', rule: LIFE },
+        { name: 'you', rule: playerRule },
         { name: 'rival', rule: LIFE },
         { name: 'wilds', rule: LIFE },
       ],
@@ -96,7 +115,7 @@ export class Duel {
   }
 
   private draw(): string {
-    return PATTERNS[pickInt(this.drawRng, PATTERNS.length)].id
+    return this.playerPool[pickInt(this.drawRng, this.playerPool.length)].id
   }
 
   get maxInset(): number {
@@ -236,7 +255,7 @@ export class Duel {
     if (this.biomass[faction] < pattern.cost) return false
     const cells = this.patternCells(pattern, ox, oy, rot)
     if (!this.canPlace(faction, cells, pattern.clearance)) return false
-    setCells(this.state, faction, cells)
+    setCells(this.state, faction, cells, pattern.cellType ?? 0)
     this.biomass[faction] -= pattern.cost
     return true
   }

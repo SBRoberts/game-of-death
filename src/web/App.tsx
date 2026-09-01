@@ -13,7 +13,9 @@ import {
 } from '../sim'
 import { CELL, render, type Flash, type Ghost, type Pulse } from './render'
 import { Hand } from './Hand'
+import { Genome } from './Genome'
 import { sfx } from './audio'
+import { ashFor, buyGene, buySlot, earnAsh, loadMeta, toggleEquip } from './meta'
 
 const SPEEDS = TUNING.speeds // generations per second per throttle stop
 const SPEED_LABELS = ['⏸', '1×', '2×', '4×', '8×']
@@ -64,7 +66,13 @@ function aimRotation(patternId: string): number {
 export function App() {
   const [seed, setSeed] = useState(initialSeed)
   const [run, setRun] = useState(0)
-  const duel = useMemo(() => new Duel(seed), [seed, run])
+  const [meta, setMeta] = useState(loadMeta)
+  const [showGenome, setShowGenome] = useState(false)
+  const [ashEarned, setAshEarned] = useState<number | null>(null)
+  const metaRef = useRef(meta)
+  metaRef.current = meta
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
+  const duel = useMemo(() => new Duel(seed, {}, metaRef.current.equipped), [seed, run])
 
   const [speedIdx, setSpeedIdx] = useState(1)
   const [selected, setSelected] = useState<number | null>(null)
@@ -91,6 +99,8 @@ export function App() {
     setRun((r) => r + 1)
     setSelected(null)
     setSpeedIdx(1)
+    setAshEarned(null)
+    setShowGenome(false)
     flashesRef.current = []
   }, [])
 
@@ -142,6 +152,9 @@ export function App() {
       prevInset = duel.state.ringInset
       if (prevStatus === 'running' && duel.status !== 'running') {
         sfx.play(duel.status === 'won' ? 'win' : 'lose')
+        const amount = ashFor(duel)
+        setAshEarned(amount)
+        setMeta((m) => earnAsh(m, amount))
       }
       prevStatus = duel.status
       stormFlashRef.current *= 0.955
@@ -325,6 +338,9 @@ export function App() {
           >
             {muted ? '🔇' : '🔊'}
           </button>
+          <button className="genome-btn" onClick={() => setShowGenome(true)}>
+            genome · ⬡ {meta.ash}
+          </button>
         </div>
       </header>
 
@@ -347,7 +363,15 @@ export function App() {
           <div className={`overlay ${hud.status}`}>
             <div className="verdict">{hud.status === 'won' ? 'VICTORY' : 'DEATH'}</div>
             <div className="outcome">{hud.outcome}</div>
-            <button onClick={newRun}>new run [n]</button>
+            {ashEarned !== null && (
+              <div className="ash-earned">
+                +{ashEarned} ash <span>· ⬡ {meta.ash} total</span>
+              </div>
+            )}
+            <div className="overlay-actions">
+              <button onClick={() => setShowGenome(true)}>genome</button>
+              <button onClick={newRun}>new run [n]</button>
+            </div>
           </div>
         )}
       </div>
@@ -369,6 +393,16 @@ export function App() {
           })
         }
       />
+
+      {showGenome && (
+        <Genome
+          meta={meta}
+          onBuySlot={() => setMeta(buySlot)}
+          onBuyGene={(k) => setMeta((m) => buyGene(m, k))}
+          onToggleEquip={(k) => setMeta((m) => toggleEquip(m, k))}
+          onClose={() => setShowGenome(false)}
+        />
+      )}
 
       <footer className="help">
         <span>click card → click board to seed</span>

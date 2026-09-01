@@ -39,6 +39,27 @@ You interact through three levers:
 Runs are fully deterministic per seed (`?seed=...` in the URL). Same seed, same
 actions, same universe, every time.
 
+## The genome (meta-progression)
+
+Finished runs pay **ash** (survival time + victory bonus + final holdings).
+Ash buys two things, both breadth rather than raw power:
+
+- **Genome slots** (max 5, rising cost). Your first run is pure B3/S23 — the
+  game teaches Conway before it lets you mutate him.
+- **Genes**, equipped into slots pre-run; the loadout is your build:
+  - *rule genes* mutate one axis — Hardy (S+4), HighLife (B+6), Ranger
+    (reach 14), Thrifty (income +50%)
+  - *card genes* unlock **special uni-cells** into your draw pool:
+    - **Elder** — a single immortal cell; ignores every death rule but the storm
+    - **Vampire** — converts one adjacent enemy per generation, never defects,
+      starves without neighbors (a non-standard death)
+    - **Martyr** — lives like a cell, dies like a bomb: adjacent enemies die too
+
+Special cells are per-cell *type* overrides in the engine (`celltypes.ts`) —
+data tuples the step function reads, never bespoke logic. Meta state lives in
+localStorage on the web side; the sim receives the loadout as an argument and
+stays pure.
+
 ## The proof
 
 `npm run harness` pits a **planner** policy (samples placements, scores each

@@ -1,12 +1,19 @@
 /**
  * The automaton itself. step() is pure state → state with zero randomness:
- * classic B/S rules per faction, plus two faction interactions —
+ * classic B/S rules per faction, plus faction interactions —
  *   Recruitment: a birth joins the strictly dominant neighboring faction.
  *   Flanking:    a live cell outnumbered by ≥ flankingMargin defects.
+ *   Casualty:    outnumbered below that margin, it dies instead.
+ * — and per-cell type overrides (Elder/Vampire/Martyr, see celltypes.ts).
  * Ties resolve to "nothing happens" so no faction gets a hidden edge.
  */
 
+import { CELL_TYPES } from './celltypes'
 import type { SimConfig, SimState } from './types'
+
+const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
+  [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0],
+]
 
 export function createState(cfg: SimConfig): SimState {
   const n = cfg.width * cfg.height
@@ -15,21 +22,10 @@ export function createState(cfg: SimConfig): SimState {
     gen: 0,
     cells: new Uint8Array(n),
     prev: new Uint8Array(n),
+    types: new Uint8Array(n),
+    prevTypes: new Uint8Array(n),
     pops: cfg.factions.map(() => 0),
     ringInset: 0,
-  }
-}
-
-export function setCells(s: SimState, faction: number, coords: ReadonlyArray<readonly [number, number]>): void {
-  const { width, height } = s.cfg
-  for (const [x, y] of coords) {
-    if (x < 0 || x >= width || y < 0 || y >= height) continue
-    const i = y * width + x
-    const old = s.cells[i]
-    if (old === faction) continue
-    if (old > 0) s.pops[old]--
-    s.cells[i] = faction
-    if (faction > 0) s.pops[faction]++
   }
 }
 
@@ -39,31 +35,52 @@ export function cloneState(s: SimState): SimState {
     gen: s.gen,
     cells: s.cells.slice(),
     prev: s.prev.slice(),
+    types: s.types.slice(),
+    prevTypes: s.prevTypes.slice(),
     pops: s.pops.slice(),
     ringInset: s.ringInset,
+  }
+}
+
+export function setCells(
+  s: SimState,
+  faction: number,
+  coords: ReadonlyArray<readonly [number, number]>,
+  cellType = 0,
+): void {
+  const { width, height } = s.cfg
+  for (const [x, y] of coords) {
+    if (x < 0 || x >= width || y < 0 || y >= height) continue
+    const i = y * width + x
+    const old = s.cells[i]
+    if (old > 0) s.pops[old]--
+    s.cells[i] = faction
+    s.types[i] = faction > 0 ? cellType : 0
+    if (faction > 0) s.pops[faction]++
   }
 }
 
 export function step(s: SimState): void {
   const { width: w, height: h, factions, flankingMargin, casualtyMargin } = s.cfg
   const cells = s.cells
-  const next = s.prev // reuse the old buffer; after the swap it holds gen-1
+  const types = s.types
+  const next = s.prev // reuse the old buffers; after the swap they hold gen-1
+  const nextTypes = s.prevTypes
   const nf = factions.length
   const counts = new Int32Array(nf)
-  const pops = s.pops
-  pops.fill(0)
   const inset = s.ringInset
   const x0 = inset
   const x1 = w - inset
   const y0 = inset
   const y1 = h - inset
+  const inSafe = (x: number, y: number): boolean => x >= x0 && x < x1 && y >= y0 && y < y1
 
   for (let y = 0; y < h; y++) {
-    const rowInside = y >= y0 && y < y1
     for (let x = 0; x < w; x++) {
       const i = y * w + x
-      if (!rowInside || x < x0 || x >= x1) {
-        next[i] = 0 // the storm
+      if (!inSafe(x, y)) {
+        next[i] = 0 // the storm suppresses every ability, even the Elder's
+        nextTypes[i] = 0
         continue
       }
 
@@ -87,27 +104,82 @@ export function step(s: SimState): void {
 
       const cur = cells[i]
       let out = 0
+      let outType = 0
       if (cur > 0) {
+        const t = CELL_TYPES[types[i]]
         const friendly = counts[cur]
         const enemy = total - friendly
-        if (enemy - friendly >= flankingMargin) {
+        if (!t.steadfast && enemy - friendly >= flankingMargin) {
           out = dominant(counts, nf, cur) || cur // defect to the dominant enemy
-        } else if (enemy - friendly >= casualtyMargin) {
+          outType = out === cur ? types[i] : 0
+        } else if (!t.steadfast && enemy - friendly >= casualtyMargin) {
           out = 0 // contested and outnumbered: a casualty, not a convert
         } else {
-          out = (factions[cur].rule.survive >> total) & 1 ? cur : 0
+          const surviveMask = t.surviveMask ?? factions[cur].rule.survive
+          if ((surviveMask >> total) & 1) {
+            out = cur
+            outType = types[i]
+          }
         }
       } else if (total > 0) {
         const d = dominant(counts, nf, 0)
-        if (d > 0 && (factions[d].rule.birth >> total) & 1) out = d
+        if (d > 0 && (factions[d].rule.birth >> total) & 1) out = d // born normal
       }
       next[i] = out
-      if (out > 0) pops[out]++
+      nextTypes[i] = outType
     }
   }
 
+  // Vampire pass: each surviving vampire converts one adjacent enemy in the
+  // next state. Neighbor scan order rotates with the generation so the feeding
+  // direction varies — deterministically.
+  for (let i = 0; i < cells.length; i++) {
+    if (!CELL_TYPES[types[i]].drain || cells[i] === 0 || next[i] !== cells[i]) continue
+    const x = i % w
+    const y = Math.floor(i / w)
+    const start = s.gen % 8
+    for (let k = 0; k < 8; k++) {
+      const [dx, dy] = NEIGHBORS[(start + k) % 8]
+      const xx = x + dx
+      const yy = y + dy
+      if (xx < 0 || xx >= w || yy < 0 || yy >= h || !inSafe(xx, yy)) continue
+      const j = yy * w + xx
+      if (next[j] > 0 && next[j] !== cells[i] && !CELL_TYPES[nextTypes[j]].unconvertible) {
+        next[j] = cells[i]
+        nextTypes[j] = 0
+        break
+      }
+    }
+  }
+
+  // Martyr pass: a martyr that died to the rules (not the storm) takes every
+  // adjacent enemy with it. Blasts do not chain into other martyrs' deaths.
+  for (let i = 0; i < cells.length; i++) {
+    if (!CELL_TYPES[types[i]].onDeathKill || cells[i] === 0 || next[i] !== 0) continue
+    const x = i % w
+    const y = Math.floor(i / w)
+    if (!inSafe(x, y)) continue
+    for (const [dx, dy] of NEIGHBORS) {
+      const xx = x + dx
+      const yy = y + dy
+      if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
+      const j = yy * w + xx
+      if (next[j] > 0 && next[j] !== cells[i]) {
+        next[j] = 0
+        nextTypes[j] = 0
+      }
+    }
+  }
+
+  // Specials edit the grid post-pass, so recount populations wholesale.
+  const pops = s.pops
+  pops.fill(0)
+  for (let i = 0; i < next.length; i++) if (next[i] > 0) pops[next[i]]++
+
   s.prev = s.cells
   s.cells = next
+  s.prevTypes = s.types
+  s.types = nextTypes
   s.gen++
 }
 
@@ -134,8 +206,9 @@ function dominant(counts: Int32Array, nf: number, except: number): number {
 export function stateHash(s: SimState): number {
   let h = 0x811c9dc5
   const cells = s.cells
+  const types = s.types
   for (let i = 0; i < cells.length; i++) {
-    h ^= cells[i]
+    h ^= cells[i] ^ (types[i] << 4)
     h = Math.imul(h, 0x01000193)
   }
   h ^= s.gen

@@ -42,6 +42,10 @@ export interface SimState {
   cells: Uint8Array
   /** Previous generation's cells (valid after each step; used for ash trails). */
   prev: Uint8Array
+  /** Cell-type id per cell (see celltypes.ts); 0 = normal Conway cell. */
+  types: Uint8Array
+  /** Previous generation's types (scratch buffer after each step). */
+  prevTypes: Uint8Array
   /** Population per faction index. */
   pops: number[]
   /** Entropy-storm inset from every board edge; cells outside the safe rect die. */

@@ -1,0 +1,77 @@
+# THE GAME OF DEATH
+
+A roguelike duel built on Conway's Game of Life. Seed your colony, open the
+throttle, and outlive both the rival and the entropy storm closing in from the
+edges of the universe.
+
+**Play:** `npm install && npm run dev` → http://localhost:5173
+
+## How it plays
+
+Two colonies of B3/S23 life share one board. On top of Conway's rules sit two
+faction interactions:
+
+- **Recruitment** — a newborn cell joins the strictly dominant neighboring
+  faction (ties abort the birth).
+- **Flanking** — a live cell whose enemy neighbors outnumber its friends by 2+
+  defects on the spot.
+
+You interact through three levers:
+
+- **The throttle** (pause–8×). Biomass income accrues *per generation*, so
+  running hot is how you get rich — and how you die unwatched.
+- **The hand.** Three pattern cards (gliders, eaters, spaceships, the
+  R-Pentomino…) placeable within 8 cells of your living colony. Right-click or
+  `R` rotates. Plan while paused; pay in biomass.
+- **The storm.** After 400 generations the board edges begin to die inward.
+  Extinction ends the duel; if the storm closes first, territory decides — and
+  the house wins ties.
+
+Runs are fully deterministic per seed (`?seed=...` in the URL). Same seed, same
+actions, same universe, every time.
+
+## Architecture
+
+```
+src/sim/      Pure, deterministic, dependency-free TypeScript.
+              No DOM, no Date.now, no Math.random. This is the future
+              Rust/WASM boundary — nothing in here may import outward.
+src/web/      Vite + React chrome. The board is ONE canvas, never React.
+src/harness/  Headless self-play (npm run harness). The seed of the
+              balance harness: when genes exist, winrates get flagged here.
+```
+
+## Design laws
+
+1. **One currency, one physics.** All power flows through biomass; abilities
+   transform matter, never mint it.
+2. **Carrying capacity as ecology.** Runaway growth gets taxed by the rules
+   themselves, not by UI caps. (Planned — see roadmap.)
+3. **Genes are data, not code.** Every upgrade is a rule tuple (B/S digits,
+   radius, delay, cost). Never bespoke logic.
+4. **One axis per gene.** Each gene changes exactly one number, so broken
+   builds are bisectable.
+5. **Every forever has a clock.** No board state may stop changing; the storm
+   is the global guarantee.
+6. **Determinism with seeds.** Every run is a replayable bug report.
+
+## Roadmap
+
+- **M1 — the toy** *(this build)*: board, factions, throttle, hand, biomass,
+  storm, scripted rival, win/loss.
+- **M2 — the kill-question**: does the better plan reliably win? Tune faction
+  physics + AI until self-play says yes; add Foresight ghost-preview.
+- **M3 — the loop**: 3-round gauntlet, between-round shop, five archetype
+  keystone genes, harness flags >65% winrates.
+- **Later**: meta-progression (breadth-first unlocks, genome slots, codex),
+  Rust/WASM sim port behind the existing boundary, PWA + touch + juice.
+
+## Commands
+
+| Command             | What                                        |
+| ------------------- | ------------------------------------------- |
+| `npm run dev`       | Dev server                                  |
+| `npm test`          | Sim ground-truth tests (vitest)             |
+| `npm run harness`   | Headless self-play + determinism audit      |
+| `npm run typecheck` | Strict TS across sim/web/harness            |
+| `npm run build`     | Static production build (itch.io-shippable) |

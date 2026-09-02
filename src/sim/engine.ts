@@ -17,6 +17,7 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
 
 export function createState(cfg: SimConfig): SimState {
   const n = cfg.width * cfg.height
+  const nf = cfg.factions.length
   return {
     cfg,
     gen: 0,
@@ -26,6 +27,9 @@ export function createState(cfg: SimConfig): SimState {
     prevTypes: new Uint8Array(n),
     pops: cfg.factions.map(() => 0),
     ringInset: 0,
+    deaths: new Int32Array(nf),
+    converts: new Int32Array(nf * nf),
+    blasts: [],
   }
 }
 
@@ -39,6 +43,9 @@ export function cloneState(s: SimState): SimState {
     prevTypes: s.prevTypes.slice(),
     pops: s.pops.slice(),
     ringInset: s.ringInset,
+    deaths: s.deaths.slice(),
+    converts: s.converts.slice(),
+    blasts: [...s.blasts],
   }
 }
 
@@ -74,11 +81,15 @@ export function step(s: SimState): void {
   const y0 = inset
   const y1 = h - inset
   const inSafe = (x: number, y: number): boolean => x >= x0 && x < x1 && y >= y0 && y < y1
+  const deaths = s.deaths
+  const converts = s.converts
+  s.blasts.length = 0
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x
       if (!inSafe(x, y)) {
+        if (cells[i] > 0) deaths[cells[i]]++
         next[i] = 0 // the storm suppresses every ability, even the Elder's
         nextTypes[i] = 0
         continue
@@ -125,6 +136,10 @@ export function step(s: SimState): void {
         const d = dominant(counts, nf, 0)
         if (d > 0 && (factions[d].rule.birth >> total) & 1) out = d // born normal
       }
+      if (cur > 0) {
+        if (out === 0) deaths[cur]++
+        else if (out !== cur) converts[cur * nf + out]++
+      }
       next[i] = out
       nextTypes[i] = outType
     }
@@ -147,6 +162,7 @@ export function step(s: SimState): void {
       if (xx < 0 || xx >= w || yy < 0 || yy >= h || !inSafe(xx, yy)) continue
       const j = yy * w + xx
       if (next[j] > 0 && next[j] !== cells[i] && !CELL_TYPES[nextTypes[j]].unconvertible) {
+        converts[next[j] * nf + cells[i]]++
         next[j] = cells[i]
         nextTypes[j] = 0
         break
@@ -161,12 +177,14 @@ export function step(s: SimState): void {
     const x = i % w
     const y = Math.floor(i / w)
     if (!inSafe(x, y)) continue
+    s.blasts.push(i)
     for (const [dx, dy] of NEIGHBORS) {
       const xx = x + dx
       const yy = y + dy
       if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
       const j = yy * w + xx
       if (next[j] > 0 && next[j] !== cells[i]) {
+        deaths[next[j]]++
         next[j] = 0
         nextTypes[j] = 0
       }

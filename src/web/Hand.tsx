@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { patternById, rotate, type Duel } from '../sim'
 import { COLORS } from './render'
 
@@ -9,7 +10,29 @@ interface HandProps {
   onSelect: (idx: number) => void
 }
 
+const tiltMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const el = e.currentTarget
+  const r = el.getBoundingClientRect()
+  el.style.setProperty('--tx', ((e.clientX - r.left) / r.width - 0.5).toFixed(3))
+  el.style.setProperty('--ty', ((e.clientY - r.top) / r.height - 0.5).toFixed(3))
+}
+
+const tiltReset = (e: React.MouseEvent<HTMLButtonElement>) => {
+  e.currentTarget.style.setProperty('--tx', '0')
+  e.currentTarget.style.setProperty('--ty', '0')
+}
+
 export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps) {
+  // A slot whose card id changed gets a fresh key → deal-in animation.
+  const prevIds = useRef<string[]>([])
+  const bumps = useRef<number[]>([])
+  duel.hand.forEach((id, i) => {
+    if (prevIds.current[i] !== undefined && prevIds.current[i] !== id) {
+      bumps.current[i] = (bumps.current[i] ?? 0) + 1
+    }
+  })
+  prevIds.current = [...duel.hand]
+
   return (
     <div className="hand">
       {duel.hand.map((id, i) => {
@@ -21,20 +44,21 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
         const poor = biomass < p.cost
         return (
           <button
-            key={`${i}-${id}`}
-            className={`card ${selected === i ? 'selected' : ''} ${poor ? 'poor' : ''}`}
+            key={`${i}-${id}-${bumps.current[i] ?? 0}`}
+            className={`card dealt ${selected === i ? 'selected' : ''} ${poor ? 'poor' : ''}`}
             onClick={() => onSelect(i)}
+            onMouseMove={tiltMove}
+            onMouseLeave={tiltReset}
             disabled={duel.status !== 'running'}
           >
             <svg viewBox={`0 0 ${size} ${size}`} className="card-preview">
               {cells.map(([x, y]) => (
-                <rect
+                <circle
                   key={`${x},${y}`}
-                  x={x + (size - w) / 2}
-                  y={y + (size - h) / 2}
-                  width={0.9}
-                  height={0.9}
-                  fill={COLORS.player}
+                  cx={x + (size - w) / 2 + 0.45}
+                  cy={y + (size - h) / 2 + 0.45}
+                  r={0.44}
+                  fill={id === 'vampire' ? COLORS.vampire : COLORS.player}
                 />
               ))}
             </svg>

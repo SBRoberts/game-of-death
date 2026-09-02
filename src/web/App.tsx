@@ -12,11 +12,20 @@ import {
   rotateDir,
   type Impact,
 } from '../sim'
-import { CELL, render, type Flash, type Ghost, type Pulse } from './render'
+import { CELL, COLORS, render, type Flash, type Ghost, type Pulse, type Spark } from './render'
 import { Hand } from './Hand'
 import { Genome } from './Genome'
-import { sfx } from './audio'
-import { ashFor, buyGene, buySlot, earnAsh, loadMeta, toggleEquip } from './meta'
+import { CashOut } from './CashOut'
+import { sfx, type SfxName } from './audio'
+import { ashBreakdown, ashFor, buyGene, buySlot, earnAsh, loadMeta, toggleEquip } from './meta'
+
+const PLACE_SOUND: Record<string, SfxName> = {
+  hold: 'place_hold',
+  grow: 'place_grow',
+  strike: 'place_strike',
+  guard: 'place_guard',
+  bomb: 'place_bomb',
+}
 
 const SPEEDS = TUNING.speeds // generations per second per throttle stop
 const SPEED_LABELS = ['⏸', '1×', '2×', '4×', '8×']
@@ -38,6 +47,8 @@ interface Hud {
   playerPop: number
   rivalPop: number
   wildsPop: number
+  destroyed: number
+  captured: number
   inset: number
   stormEta: number
   status: Duel['status']
@@ -94,8 +105,16 @@ export function App() {
   const hoverRef = useRef<{ x: number; y: number } | null>(null)
   const flashesRef = useRef<Flash[]>([])
   const pulsesRef = useRef<Pulse[]>([])
+  const sparksRef = useRef<Spark[]>([])
   const stormFlashRef = useRef(0)
   const [muted, setMuted] = useState(sfx.muted)
+  const [shake, setShake] = useState('')
+  const shakeTimer = useRef(0)
+  const boom = useCallback(() => {
+    setShake('shaking')
+    window.clearTimeout(shakeTimer.current)
+    shakeTimer.current = window.setTimeout(() => setShake(''), 280)
+  }, [])
   const speedRef = useRef(speedIdx)
   const selectedRef = useRef(selected)
   const rotationRef = useRef(rotation)
@@ -147,11 +166,16 @@ export function App() {
     let prevStatus = duel.status
     let hintText: string | null = null
     let hintGrade: Hud['grade'] = null
+    let lastBoomAt = 0
+    let lastCrunchAt = 0
+    let lastDeaths = 0
+    const onBoom = boom
 
     const frame = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const gps = SPEEDS[speedRef.current]
+      let ticked = false
       if (duel.status === 'running' && gps > 0) {
         acc += dt * gps
         let batch = 0
@@ -159,9 +183,47 @@ export function App() {
           duel.tick()
           acc -= 1
           batch++
+          ticked = true
+          // Martyr detonations: ring, boom, and a kick of the slide.
+          for (const b of duel.state.blasts) {
+            const w = duel.t.width
+            pulsesRef.current.push({
+              x: (b % w) + 0.5,
+              y: Math.floor(b / w) + 0.5,
+              ttl: 26,
+              max: 26,
+              maxR: 4.5 * CELL,
+              color: COLORS.martyr,
+            })
+            if (now - lastBoomAt > 180) {
+              sfx.play('boom')
+              lastBoomAt = now
+              onBoom()
+            }
+          }
         }
       } else {
         acc = 0
+      }
+
+      // Conversion sparks: any cell that changed hands this generation.
+      if (ticked) {
+        const { cells, prev } = duel.state
+        const w = duel.t.width
+        let budget = 80
+        for (let i = 0; i < cells.length && budget > 0; i++) {
+          if (cells[i] > 0 && prev[i] > 0 && cells[i] !== prev[i]) {
+            sparksRef.current.push({ x: i % w, y: Math.floor(i / w), ttl: 8, color: '#fff' })
+            budget--
+          }
+        }
+        // A front collapsing all at once earns a crunch.
+        const rd = duel.state.deaths[RIVAL] + duel.state.deaths[PLAYER]
+        if (rd - lastDeaths >= 14 && now - lastCrunchAt > 220) {
+          sfx.play('crunch')
+          lastCrunchAt = now
+        }
+        lastDeaths = rd
       }
 
       // Event edges: the storm's first bite, and the duel's verdict.
@@ -173,7 +235,7 @@ export function App() {
       if (prevStatus === 'running' && duel.status !== 'running') {
         sfx.play(duel.status === 'won' ? 'win' : 'lose')
         const runClear = duel.status === 'won' && round === ROUNDS.length
-        const amount = ashFor(duel) + (runClear ? 40 : 0)
+        const amount = ashFor(duel, runClear)
         setAshEarned(amount)
         setMeta((m) => earnAsh(m, amount))
       }
@@ -211,8 +273,12 @@ export function App() {
       pulsesRef.current = pulsesRef.current
         .map((p) => ({ ...p, ttl: p.ttl - 1 }))
         .filter((p) => p.ttl > 0)
+      sparksRef.current = sparksRef.current
+        .map((sp) => ({ ...sp, ttl: sp.ttl - 1 }))
+        .filter((sp) => sp.ttl > 0)
       render(ctx, duel, ghost, impact, flashesRef.current, {
         pulses: pulsesRef.current,
+        sparks: sparksRef.current,
         hoverCell: ghost ? null : hoverRef.current,
         now,
         stormFlash: stormFlashRef.current,
@@ -221,6 +287,7 @@ export function App() {
       if (now - hudAt > 100) {
         hudAt = now
         const s = duel.state
+        const sum = duel.summary
         setHud({
           gen: s.gen,
           biomass: Math.floor(duel.biomass[PLAYER]),
@@ -228,6 +295,8 @@ export function App() {
           playerPop: s.pops[PLAYER],
           rivalPop: s.pops[RIVAL],
           wildsPop: s.pops[WILDS],
+          destroyed: sum.rivalDestroyed,
+          captured: sum.wildsCaptured + sum.rivalConverted,
           inset: s.ringInset,
           stormEta: Math.max(0, duel.t.ringGrace - s.gen),
           status: duel.status,
@@ -270,7 +339,7 @@ export function App() {
 
     raf = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(raf)
-  }, [duel])
+  }, [duel, round, boom])
 
   // Pointer input on the board.
   const cellFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -290,13 +359,23 @@ export function App() {
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (selected === null) return
     const { x, y } = cellFromEvent(e)
+    const id = duel.hand[selected]
     const placed = duel.playCard(selected, x, y, rotation)
-    if (placed) {
+    if (placed && id) {
+      const pattern = patternById(id)
       flashesRef.current.push({ cells: placed, ttl: 12 })
       const cx = placed.reduce((a, [px]) => a + px, 0) / placed.length + 0.5
       const cy = placed.reduce((a, [, py]) => a + py, 0) / placed.length + 0.5
-      pulsesRef.current.push({ x: cx, y: cy, ttl: 22, max: 22 })
-      sfx.play('place')
+      pulsesRef.current.push({
+        x: cx,
+        y: cy,
+        ttl: 22,
+        max: 22,
+        maxR: 3.4 * CELL,
+        color: id === 'vampire' ? COLORS.vampire : COLORS.player,
+      })
+      // Every piece sounds like what it is.
+      sfx.play(id === 'vampire' ? 'place_dark' : (PLACE_SOUND[pattern.role] ?? 'place'))
     } else {
       sfx.play('invalid')
     }
@@ -342,6 +421,12 @@ export function App() {
           <span className="stat you">you {hud?.playerPop ?? 0}</span>
           <span className="stat rival">rival {hud?.rivalPop ?? 0}</span>
           <span className="stat wilds">wilds {hud?.wildsPop ?? 0}</span>
+          <span className="stat kills" key={`k${hud?.destroyed ?? 0}`}>
+            ☠ {(hud?.destroyed ?? 0).toLocaleString()}
+          </span>
+          <span className="stat captures" key={`c${hud?.captured ?? 0}`}>
+            ◈ {hud?.captured ?? 0}
+          </span>
           <span className="stat storm">{stormLabel}</span>
         </div>
         <div className="hud-controls">
@@ -370,7 +455,7 @@ export function App() {
         </div>
       </header>
 
-      <div className="board-wrap">
+      <div className={`board-wrap ${shake}`}>
         {hud?.hint && (
           <div className={`impact-readout ${hud.grade ?? 'problem'}`}>
             {hud.hint}
@@ -402,9 +487,11 @@ export function App() {
                   : `${hud.outcome} A full gauntlet, survived.`}
             </div>
             {ashEarned !== null && (
-              <div className="ash-earned">
-                +{ashEarned} ash <span>· ⬡ {meta.ash} total</span>
-              </div>
+              <CashOut
+                key={`${seed}-${round}`}
+                breakdown={ashBreakdown(duel, hud.status === 'won' && round === ROUNDS.length)}
+                bank={meta.ash}
+              />
             )}
             <div className="overlay-actions">
               <button onClick={() => setShowGenome(true)}>genome</button>

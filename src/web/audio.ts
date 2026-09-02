@@ -62,7 +62,22 @@ function noise(ac: AudioContext, dur: number, peak: number, cutoff: number, dela
   src.start(t)
 }
 
-export type SfxName = 'select' | 'place' | 'invalid' | 'storm' | 'win' | 'lose'
+export type SfxName =
+  | 'select'
+  | 'place'
+  | 'place_hold'
+  | 'place_grow'
+  | 'place_strike'
+  | 'place_guard'
+  | 'place_bomb'
+  | 'place_dark'
+  | 'invalid'
+  | 'boom'
+  | 'crunch'
+  | 'tick'
+  | 'storm'
+  | 'win'
+  | 'lose'
 
 export const sfx = {
   get muted(): boolean {
@@ -89,8 +104,41 @@ export const sfx = {
         tone(ac, 'sine', 190, 62, 0.13, 0.28)
         noise(ac, 0.06, 0.1, 900)
         break
+      case 'place_hold': // a heavy brick set down
+        tone(ac, 'sine', 130, 58, 0.18, 0.34)
+        noise(ac, 0.07, 0.12, 600)
+        break
+      case 'place_grow': // two soft buds
+        tone(ac, 'triangle', 520, 540, 0.06, 0.14)
+        tone(ac, 'triangle', 660, 690, 0.07, 0.14, 0.07)
+        break
+      case 'place_strike': // a launch whoosh
+        noise(ac, 0.2, 0.14, 2400)
+        tone(ac, 'sawtooth', 200, 540, 0.18, 0.1)
+        break
+      case 'place_guard': // metal stake planted
+        tone(ac, 'square', 190, 170, 0.08, 0.16)
+        tone(ac, 'square', 400, 380, 0.05, 0.1, 0.05)
+        break
+      case 'place_bomb': // arming: a descending warble
+        tone(ac, 'square', 880, 240, 0.28, 0.1)
+        break
+      case 'place_dark': // dissonant dyad for the vampire
+        tone(ac, 'sine', 220, 216, 0.3, 0.14)
+        tone(ac, 'sine', 233, 230, 0.3, 0.12)
+        break
       case 'invalid':
         tone(ac, 'square', 130, 82, 0.09, 0.1)
+        break
+      case 'boom': // martyr detonation
+        tone(ac, 'sine', 95, 28, 0.5, 0.5)
+        noise(ac, 0.4, 0.3, 500)
+        break
+      case 'crunch': // a front collapsing
+        noise(ac, 0.12, 0.18, 900)
+        break
+      case 'tick': // cash-out line item
+        tone(ac, 'square', 740, 760, 0.045, 0.12)
         break
       case 'storm':
         tone(ac, 'sawtooth', 55, 34, 0.9, 0.16)

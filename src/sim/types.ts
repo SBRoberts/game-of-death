@@ -50,4 +50,10 @@ export interface SimState {
   pops: number[]
   /** Entropy-storm inset from every board edge; cells outside the safe rect die. */
   ringInset: number
+  /** Cumulative deaths per faction (all causes, storm included). */
+  deaths: Int32Array
+  /** Cumulative conversions, indexed [from * factions.length + to]. */
+  converts: Int32Array
+  /** Cell indices of martyr detonations THIS step (cleared each step). */
+  blasts: number[]
 }

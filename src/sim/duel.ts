@@ -162,6 +162,18 @@ export class Duel {
     if (this.status === 'running') this.finish(status, 'debug')
   }
 
+  /** What happened this duel — feeds the cash-out and the HUD tickers. */
+  get summary() {
+    const nf = this.state.cfg.factions.length
+    return {
+      gens: this.state.gen,
+      rivalDestroyed: this.state.deaths[RIVAL],
+      playerLost: this.state.deaths[PLAYER],
+      wildsCaptured: this.state.converts[WILDS * nf + PLAYER],
+      rivalConverted: this.state.converts[RIVAL * nf + PLAYER],
+    }
+  }
+
   get maxInset(): number {
     return Math.floor(Math.min(this.t.width, this.t.height) / 2) - this.t.ringMinHalf
   }

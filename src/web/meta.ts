@@ -4,7 +4,7 @@
  * receives the equipped loadout as a plain argument.
  */
 
-import { Duel, PLAYER, SLOT_COSTS, geneByKey } from '../sim'
+import { Duel, SLOT_COSTS, geneByKey } from '../sim'
 
 const KEY = 'god-meta-v1'
 
@@ -42,12 +42,47 @@ function save(m: MetaState): MetaState {
   return m
 }
 
-/** Ash earned by a finished duel: time survived plus a victory bonus. */
-export function ashFor(duel: Duel): number {
-  const survival = Math.floor(duel.state.gen / 12)
-  const win = duel.status === 'won' ? 25 : 0
-  const holdings = Math.floor(duel.state.pops[PLAYER] / 25)
-  return survival + win + holdings
+export interface AshRow {
+  label: string
+  detail: string
+  value: number
+}
+
+/**
+ * Itemized ash payout — one source of truth for the earn logic AND the
+ * cash-out screen, so the reward you watch count up is the reward you get.
+ */
+export function ashBreakdown(duel: Duel, runClear: boolean): { rows: AshRow[]; total: number } {
+  const s = duel.summary
+  const rows: AshRow[] = [
+    { label: 'endurance', detail: `${s.gens} generations`, value: Math.floor(s.gens / 20) },
+    {
+      label: 'destruction',
+      detail: `${s.rivalDestroyed.toLocaleString()} rival cells died`,
+      value: Math.floor(s.rivalDestroyed / 2000),
+    },
+  ]
+  if (s.wildsCaptured > 0)
+    rows.push({
+      label: 'capture',
+      detail: `${s.wildsCaptured} wilds claimed`,
+      value: Math.floor(s.wildsCaptured / 2),
+    })
+  if (s.rivalConverted > 0)
+    rows.push({
+      label: 'conversion',
+      detail: `${s.rivalConverted} enemies turned`,
+      value: Math.floor(s.rivalConverted / 5),
+    })
+  if (duel.status === 'won') rows.push({ label: 'victory', detail: 'round cleared', value: 25 })
+  if (runClear) rows.push({ label: 'the universe yields', detail: 'full gauntlet', value: 40 })
+  const total = rows.reduce((a, r) => a + r.value, 0)
+  return { rows: rows.filter((r) => r.value > 0), total }
+}
+
+/** Ash earned by a finished duel (see ashBreakdown for the itemization). */
+export function ashFor(duel: Duel, runClear = false): number {
+  return ashBreakdown(duel, runClear).total
 }
 
 export function earnAsh(m: MetaState, amount: number): MetaState {

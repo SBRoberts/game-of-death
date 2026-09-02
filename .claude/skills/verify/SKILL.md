@@ -26,12 +26,19 @@ Key selectors / inputs:
 
 - Load `http://localhost:5173/?seed=<fixed>` for reproducible runs; press
   `Space` immediately to pause for stable inspection.
-- Top bar holds only biomass + controls; round/gen/storm/tickers live in
-  `.subbar` (`.stat.round`, `.stat.storm`, `.stat.kills`). Populations have
-  no numeric readout — the canvas border IS the territory gauge (green from
-  left-center, red from right-center, slate seams for the radicals).
-- Other selectors: `.stat.biomass`, `.overlay` (null while running),
-  `.help .seed`, `.newrun` (arms to "abandon run?" mid-run).
+- The UI has TWO MOUNTS switched by window aspect ratio: float (~16:10 —
+  full-bleed board, six `.island` glass panels) and dock (`.rail` beside a
+  `.board-col` with `.label-strip`/`.footer-strip`). Aspect < 1.0 renders
+  the `.portrait` rotate prompt. Resize the viewport to pick a mount.
+- Key selectors: `.biomass-inline .val` / `.rail-panel .readout .val`
+  (wallet), `.storm-track` (two-ended hairline), `.round-pips`,
+  `.tickers .kills`, `.throttle-well .detent` (radiogroup), `.card`
+  (`.selected` shows blurb + R hint), `.plate` (ash ledger with
+  `.plate-row`s and welded `.plate-actions`), `.genome-surface` (strand:
+  `.rule-readout .rule`, `.socket-row`, `.slip`), `.coach-step`
+  (3 anchored steps until first release of time), `.overlay` (null while
+  running). Reach ring + graticule are canvas-drawn while a card is armed.
+- Populations have no numeric readout — the momentum frame is the gauge.
 - Cards: `.hand .card` (click to select). Board: click the `<canvas>` at
   fractional coordinates via its bounding box — the player colony sits around
   (0.22w, 0.5h), rival (0.78w, 0.5h).

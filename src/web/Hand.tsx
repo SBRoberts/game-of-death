@@ -2,12 +2,23 @@ import { useRef } from 'react'
 import { rotate, type Duel } from '../sim'
 import { COLORS } from './render'
 
+const ROLE_COLORS: Record<string, string> = {
+  hold: '#9db2d0',
+  grow: 'var(--you)',
+  strike: 'var(--rival)',
+  guard: '#6ea8ff',
+  bomb: 'var(--gold)',
+}
+
+export type HandVariant = 'rail' | 'float' | 'compact'
+
 interface HandProps {
   duel: Duel
   biomass: number
   selected: number | null
   rotation: number
   onSelect: (idx: number) => void
+  variant: HandVariant
 }
 
 const tiltMove = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -22,7 +33,7 @@ const tiltReset = (e: React.MouseEvent<HTMLButtonElement>) => {
   e.currentTarget.style.setProperty('--ty', '0')
 }
 
-export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps) {
+export function Hand({ duel, biomass, selected, rotation, onSelect, variant }: HandProps) {
   // A slot whose card id changed gets a fresh key → deal-in animation.
   const prevIds = useRef<string[]>([])
   const bumps = useRef<number[]>([])
@@ -34,7 +45,7 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
   prevIds.current = [...duel.hand]
 
   return (
-    <div className="hand">
+    <div className={`hand-cards ${variant === 'float' ? 'row' : ''}`}>
       {duel.hand.map((id, i) => {
         const p = duel.patternFor(1, id)
         const cells = rotate(p.cells, selected === i ? rotation : 0)
@@ -42,39 +53,88 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
         const h = Math.max(...cells.map(([, y]) => y)) + 1
         const size = Math.max(w, h, 4)
         const poor = biomass < p.cost
-        return (
-          <button
-            key={`${i}-${id}-${bumps.current[i] ?? 0}`}
-            className={`card dealt ${selected === i ? 'selected' : ''} ${poor ? 'poor' : ''}`}
-            onClick={() => onSelect(i)}
-            onMouseMove={tiltMove}
-            onMouseLeave={tiltReset}
-            disabled={duel.status !== 'running'}
-            aria-pressed={selected === i}
-            aria-label={`${p.name}, ${p.role}, costs ${p.cost} biomass${poor ? ', cannot afford' : ''}. ${p.tip}`}
-          >
-            <span className="card-key">{['Q', 'W', 'E'][i] ?? ''}</span>
-            <svg viewBox={`0 0 ${size} ${size}`} className="card-preview">
+        const isSel = selected === i
+        const roleColor = ROLE_COLORS[p.role] ?? 'var(--dim)'
+        const traveler = p.dir !== undefined
+        const preview = (
+          <div className="tile" aria-hidden="true">
+            <svg viewBox={`0 0 ${size} ${size}`}>
               {cells.map(([x, y]) => (
                 <circle
                   key={`${x},${y}`}
                   cx={x + (size - w) / 2 + 0.45}
                   cy={y + (size - h) / 2 + 0.45}
                   r={0.44}
-                  fill={id === 'vampire' ? COLORS.vampire : COLORS.player}
+                  fill={id === 'vampire' ? COLORS.vampire : isSel ? '#8affc4' : COLORS.player}
                 />
               ))}
             </svg>
-            <span className="card-name">{p.name}</span>
-            <span className="card-meta">
-              <span className="card-cost">⬢ {p.cost}</span>
-              <span className={`card-role role-${p.role}`}>{p.role}</span>
+          </div>
+        )
+        const nameRow = (
+          <div className="name-row">
+            <span className="name">{p.name}</span>
+            <span className="cost num">⬢ {p.cost}</span>
+          </div>
+        )
+        const roleRow = (
+          <div className="role-row">
+            <span className="role-bar" style={{ background: roleColor }} />
+            <span className="role-word" style={{ color: roleColor }}>
+              {p.role}
             </span>
-            <span className="card-blurb">{p.tip}</span>
+          </div>
+        )
+        // The blurb appears only on the selected card (HANDOFF §5.3).
+        const detail = isSel && (
+          <>
+            <div className="blurb">{p.tip}</div>
+            {traveler && (
+              <div className="rotate-row">
+                <span className="keycap">R</span>
+                <span className="hint">rotate · aimed →</span>
+              </div>
+            )}
+          </>
+        )
+        return (
+          <button
+            key={`${i}-${id}-${bumps.current[i] ?? 0}`}
+            className={`card dealt ${variant === 'float' ? 'float-card' : ''} ${isSel ? 'selected' : ''} ${poor ? 'poor' : ''}`}
+            onClick={() => onSelect(i)}
+            onMouseMove={tiltMove}
+            onMouseLeave={tiltReset}
+            disabled={duel.status !== 'running'}
+            aria-pressed={isSel}
+            aria-label={`${p.name}, ${p.role}, costs ${p.cost} biomass${poor ? ', cannot afford' : ''}. ${p.tip}`}
+          >
+            {variant === 'float' ? (
+              <>
+                <div className="head">
+                  {preview}
+                  <div className="col">
+                    {nameRow}
+                    {roleRow}
+                  </div>
+                </div>
+                {detail}
+              </>
+            ) : (
+              <>
+                {variant !== 'compact' && preview}
+                <div className="col">
+                  {nameRow}
+                  {roleRow}
+                  {variant !== 'compact' && detail}
+                </div>
+              </>
+            )}
+            <span className="keycap card-key" aria-hidden="true">
+              {['Q', 'W', 'E'][i] ?? ''}
+            </span>
           </button>
         )
       })}
-      <div className="hand-note">seeds must land within {duel.radii[1]} cells of your colony</div>
     </div>
   )
 }

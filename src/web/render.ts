@@ -8,7 +8,13 @@
 import { ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, RADICALS, type Duel } from '../sim'
 import type { Impact } from '../sim'
 
-export const CELL = 8
+// Cell size is runtime state so the board can fill its container (HANDOFF §3).
+// ESM live bindings keep every importer current; call setCell() only on
+// layout changes, never per frame. Integer only — fractional cells fray puncta.
+export let CELL = 8
+export function setCell(n: number): void {
+  CELL = n
+}
 
 export const COLORS = {
   bg: '#04060b',
@@ -126,6 +132,140 @@ export interface FxState {
   stormFlash: number
   /** Placement evaluation, drawn beside the ghost where the eyes already are. */
   hint: { text: string; grade: 'poor' | 'fair' | 'good' | 'great' | null } | null
+  /** Placement reach radius while a card is armed — draws the reach ring. */
+  reach: number | null
+}
+
+// ── the reach ring (HANDOFF §4.2) ──────────────────────────────────────────
+// The legal placement region, drawn as a boundary on the slide. Chebyshev
+// dilation is separable: a horizontal distance sweep then a vertical one.
+let reachMask: Uint8Array | null = null
+let reachTmp: Uint8Array | null = null
+let reachKey = ''
+
+function computeReachMask(s: { cells: Uint8Array; gen: number; cfg: { width: number; height: number } }, radius: number, pop: number): Uint8Array {
+  const w = s.cfg.width
+  const h = s.cfg.height
+  const n = w * h
+  const key = `${s.gen}:${radius}:${pop}`
+  if (reachMask && reachMask.length === n && reachKey === key) return reachMask
+  reachKey = key
+  if (!reachMask || reachMask.length !== n) {
+    reachMask = new Uint8Array(n)
+    reachTmp = new Uint8Array(n)
+  }
+  const tmp = reachTmp!
+  const mask = reachMask
+  const FAR = 1 << 20
+  for (let y = 0; y < h; y++) {
+    const base = y * w
+    let run = FAR
+    for (let x = 0; x < w; x++) {
+      run = s.cells[base + x] === PLAYER ? 0 : run + 1
+      tmp[base + x] = run <= radius ? 1 : 0
+    }
+    run = FAR
+    for (let x = w - 1; x >= 0; x--) {
+      run = s.cells[base + x] === PLAYER ? 0 : run + 1
+      if (run <= radius) tmp[base + x] = 1
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let run = FAR
+    for (let y = 0; y < h; y++) {
+      run = tmp[y * w + x] === 1 ? 0 : run + 1
+      mask[y * w + x] = run <= radius ? 1 : 0
+    }
+    run = FAR
+    for (let y = h - 1; y >= 0; y--) {
+      run = tmp[y * w + x] === 1 ? 0 : run + 1
+      if (run <= radius) mask[y * w + x] = 1
+    }
+  }
+  return mask
+}
+
+function drawReachRing(
+  ctx: CanvasRenderingContext2D,
+  s: { cells: Uint8Array; gen: number; cfg: { width: number; height: number }; pops: number[] },
+  radius: number,
+): void {
+  const w = s.cfg.width
+  const h = s.cfg.height
+  const mask = computeReachMask(s, radius, s.pops[PLAYER])
+  ctx.strokeStyle = COLORS.player
+  ctx.globalAlpha = 0.28
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  let labelX = -1
+  let labelY = 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (mask[y * w + x] !== 1) continue
+      if (x > labelX) {
+        labelX = x
+        labelY = y
+      }
+      const px = x * CELL
+      const py = y * CELL
+      if (x === 0 || mask[y * w + x - 1] === 0) {
+        ctx.moveTo(px + 0.5, py)
+        ctx.lineTo(px + 0.5, py + CELL)
+      }
+      if (x === w - 1 || mask[y * w + x + 1] === 0) {
+        ctx.moveTo(px + CELL - 0.5, py)
+        ctx.lineTo(px + CELL - 0.5, py + CELL)
+      }
+      if (y === 0 || mask[(y - 1) * w + x] === 0) {
+        ctx.moveTo(px, py + 0.5)
+        ctx.lineTo(px + CELL, py + 0.5)
+      }
+      if (y === h - 1 || mask[(y + 1) * w + x] === 0) {
+        ctx.moveTo(px, py + CELL - 0.5)
+        ctx.lineTo(px + CELL, py + CELL - 0.5)
+      }
+    }
+  }
+  ctx.stroke()
+  if (labelX >= 0) {
+    ctx.globalAlpha = 0.5
+    ctx.font = '600 9.5px ui-monospace, Menlo, monospace'
+    ctx.textAlign = 'left'
+    ctx.fillStyle = COLORS.player
+    const tx = Math.min(labelX * CELL + CELL + 6, w * CELL - 70)
+    ctx.fillText(`REACH ${radius}`, tx, labelY * CELL + 3)
+  }
+  ctx.globalAlpha = 1
+}
+
+// ── the graticule (HANDOFF §4.3) ───────────────────────────────────────────
+// An eyepiece reticle ticked into the board's inner edge. Skipped when cells
+// are too small for the ticks to stay distinct.
+function graticule(ctx: CanvasRenderingContext2D, cellsWide: number, cellsHigh: number): void {
+  if (CELL < 6) return
+  const W = cellsWide * CELL
+  const H = cellsHigh * CELL
+  const off = 7
+  ctx.strokeStyle = 'rgba(195,207,224,0.20)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  for (let x = 8; x < cellsWide; x += 8) {
+    const len = x % 32 === 0 ? 7 : 3.5
+    const px = Math.round(x * CELL) + 0.5
+    ctx.moveTo(px, off)
+    ctx.lineTo(px, off + len)
+    ctx.moveTo(px, H - off)
+    ctx.lineTo(px, H - off - len)
+  }
+  for (let y = 8; y < cellsHigh; y += 8) {
+    const len = y % 32 === 0 ? 7 : 3.5
+    const py = Math.round(y * CELL) + 0.5
+    ctx.moveTo(off, py)
+    ctx.lineTo(off + len, py)
+    ctx.moveTo(W - off, py)
+    ctx.lineTo(W - off - len, py)
+  }
+  ctx.stroke()
 }
 
 const GRADE_STEPS = { poor: 1, fair: 2, good: 3, great: 4 } as const
@@ -610,8 +750,16 @@ export function render(
   ctx.fillStyle = vignette
   ctx.fillRect(0, 0, W, H)
 
+  // Reach ring: the legal ground, lit while a card is armed.
+  if (fx.reach !== null && duel.status === 'running') {
+    drawReachRing(ctx, s, fx.reach)
+  }
+
   // The frame gauge draws over the glass so it always reads.
   drawMomentumFrame(ctx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL], fx.now, duel.status)
+
+  // The eyepiece graticule, ticked just inside the frame.
+  graticule(ctx, w, h)
 
   // Cursor-side placement evaluation: the verdict lives where you're aiming.
   // Sized for reading, not squinting: 14px type, generous padding, an opaque

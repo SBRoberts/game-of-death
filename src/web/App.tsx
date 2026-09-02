@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Duel,
+  GENES,
   PLAYER,
   RIVAL,
   ROUNDS,
@@ -16,6 +17,7 @@ import {
   CELL,
   COLORS,
   render,
+  setCell,
   setPalette,
   type Flash,
   type FloatText,
@@ -40,7 +42,6 @@ import {
   toggleEquip,
   upgradeCost,
 } from './meta'
-import { GENES } from '../sim'
 
 const PLACE_SOUND: Record<string, SfxName> = {
   hold: 'place_hold',
@@ -50,8 +51,9 @@ const PLACE_SOUND: Record<string, SfxName> = {
   bomb: 'place_bomb',
 }
 
-const SPEEDS = TUNING.speeds // generations per second per throttle stop
+const SPEEDS = TUNING.speeds
 const SPEED_LABELS = ['⏸', '1×', '2×', '4×', '8×']
+const SPEED_KEYS = ['space', '1', '2', '3', '4']
 
 function randomSeed(): string {
   const bytes = new Uint32Array(2)
@@ -67,9 +69,6 @@ interface Hud {
   gen: number
   biomass: number
   rate: string
-  playerPop: number
-  rivalPop: number
-  radicalsPop: number
   destroyed: number
   captured: number
   inset: number
@@ -96,6 +95,205 @@ function aimRotation(patternId: string): number {
   return 0
 }
 
+// ── the mount system (HANDOFF §1, §3) ──────────────────────────────────────
+type Mount = 'float' | 'rail' | 'bottom' | 'portrait'
+
+interface Layout {
+  mount: Mount
+  cell: number
+  railW: number
+  /** CSS pixel size for the canvas (differs from cell grid when upscaling). */
+  cssW: number
+  cssH: number
+}
+
+function computeLayout(w: number, h: number): Layout {
+  const aspect = w / h
+  if (aspect < 1.0) return { mount: 'portrait', cell: 8, railW: 0, cssW: 0, cssH: 0 }
+  let mount: Mount
+  if (aspect > 1.75 || w < 1024) mount = 'rail'
+  else if (aspect < 1.45) mount = 'bottom'
+  else mount = 'float'
+  const railW = mount === 'rail' ? (w < 900 ? 148 : 264) : 0
+  let availW: number
+  let availH: number
+  if (mount === 'float') {
+    availW = w
+    availH = h
+  } else if (mount === 'rail') {
+    availW = w - railW - 36
+    // The narrow rail drops the label/footer strips (HANDOFF §5.2 phone).
+    availH = railW === 148 ? h - 24 : h - 24 - 40 - 30 - 20
+  } else {
+    availW = w - 24
+    availH = h - 24 - 40 - 30 - 176 - 30
+  }
+  let cell = Math.floor(Math.min(availW / 128, availH / 80))
+  let cssW: number
+  let cssH: number
+  if (cell < 6) {
+    // Landscape-phone rule: render crisp at 4px, CSS-upscale ≤1.5× (§3).
+    cell = 4
+    const scale = Math.min(1.5, availW / (128 * 4), availH / (80 * 4))
+    cssW = Math.floor(128 * 4 * scale)
+    cssH = Math.floor(80 * 4 * scale)
+  } else {
+    cell = Math.min(cell, 14)
+    cssW = 128 * cell
+    cssH = 80 * cell
+  }
+  return { mount, cell, railW, cssW, cssH }
+}
+
+function useLayout(): Layout {
+  const [layout, setLayout] = useState(() => computeLayout(window.innerWidth, window.innerHeight))
+  useEffect(() => {
+    const onResize = () => setLayout(computeLayout(window.innerWidth, window.innerHeight))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return layout
+}
+
+// ── shared instrument pieces ───────────────────────────────────────────────
+function Mark() {
+  return <span className="mark" aria-hidden="true" />
+}
+
+function RoundPips({ round, cleared }: { round: number; cleared: boolean }) {
+  return (
+    <span className="round-pips" aria-label={`round ${round} of ${ROUNDS.length}`}>
+      {ROUNDS.map((r, i) => (
+        <i key={r.label} className={i < round ? `done ${cleared && i === round - 1 ? 'glow' : ''}` : ''} />
+      ))}
+    </span>
+  )
+}
+
+function StormTrack({ hud, grace, maxInset }: { hud: Hud | null; grace: number; maxInset: number }) {
+  const active = (hud?.inset ?? 0) > 0
+  const frac = hud
+    ? active
+      ? Math.min(1, hud.inset / maxInset)
+      : Math.min(1, 1 - hud.stormEta / grace)
+    : 0
+  const side = `${(frac * 50).toFixed(1)}%`
+  return (
+    <div className="storm-group">
+      <span className="lbl-xs">STORM</span>
+      <div className={`storm-track ${active ? 'active' : ''}`}>
+        <span className="from-left" style={{ width: side }} />
+        <span className="from-right" style={{ width: side }} />
+      </div>
+      <span className="storm-val num">{active ? `+${hud?.inset}` : `${hud?.stormEta ?? 0}g`}</span>
+    </div>
+  )
+}
+
+function ThrottleWell({
+  speedIdx,
+  onSet,
+  legends,
+  skipOne,
+}: {
+  speedIdx: number
+  onSet: (i: number) => void
+  legends: boolean
+  skipOne?: boolean
+}) {
+  const detents = SPEED_LABELS.map((label, i) => ({ label, i })).filter(
+    (d) => !(skipOne && d.i === 1),
+  )
+  return (
+    <div>
+      <div className="throttle-well" role="radiogroup" aria-label="simulation throttle">
+        {detents.map(({ label, i }) => (
+          <button
+            key={label}
+            role="radio"
+            aria-checked={speedIdx === i}
+            aria-label={i === 0 ? 'pause (space)' : `speed ${label} (key ${i})`}
+            className="detent"
+            onClick={() => onSet(i)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {legends && (
+        <div className="throttle-legends" aria-hidden="true">
+          {detents.map(({ i }) => (
+            <span key={i}>{SPEED_KEYS[i]}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FilterSet({
+  palette,
+  onToggle,
+}: {
+  palette: PaletteMode
+  onToggle: () => void
+}) {
+  const [you, rival] = palette === 'gfp' ? ['GFP', 'mCherry'] : ['CFP', 'YFP']
+  return (
+    <button
+      className="filter-set"
+      title="swap the filter set — the other pair is colorblind-safe"
+      aria-label={`filter set ${you} and ${rival}; activate to swap stains`}
+      aria-pressed={palette === 'cfp'}
+      onClick={onToggle}
+    >
+      <span className="lbl-xs">FILTER SET</span>
+      <span className="stains">
+        <span className="stain-you">{you}</span>
+        <span className="stain-sep">/</span>
+        <span className="stain-rival">{rival}</span>
+      </span>
+    </button>
+  )
+}
+
+function Tickers({ hud }: { hud: Hud | null }) {
+  return (
+    <div className="tickers">
+      <span className="kills num" key={`k${hud?.destroyed ?? 0}`}>
+        ☠ {(hud?.destroyed ?? 0).toLocaleString()}
+      </span>
+      <span className="captures num" key={`c${hud?.captured ?? 0}`}>
+        ◈ {hud?.captured ?? 0}
+      </span>
+    </div>
+  )
+}
+
+function CoachStep({
+  n,
+  title,
+  state,
+  className,
+  children,
+}: {
+  n: number
+  title: string
+  state: 'active' | 'pending'
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className={`coach-step ${state} ${className ?? ''}`}>
+      <div className="step-head">
+        <span className="disc">{n}</span>
+        <span className="step-title">{title}</span>
+      </div>
+      <div className="step-body">{children}</div>
+    </div>
+  )
+}
+
 export function App() {
   const [seed, setSeed] = useState(initialSeed)
   const [run, setRun] = useState(0)
@@ -107,6 +305,7 @@ export function App() {
   metaRef.current = meta
   const duelRef = useRef<Duel | null>(null)
   const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), [])
+  const layout = useLayout()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
   const duel = useMemo(() => {
     const r = ROUNDS[round - 1]
@@ -131,6 +330,7 @@ export function App() {
   const sparksRef = useRef<Spark[]>([])
   const floatsRef = useRef<FloatText[]>([])
   const [coached, setCoached] = useState(() => localStorage.getItem('god-coached') === '1')
+  const [placedOnce, setPlacedOnce] = useState(false)
   const stormFlashRef = useRef(0)
   const [muted, setMuted] = useState(sfx.muted)
   const [palette, setPaletteState] = useState<PaletteMode>(() =>
@@ -161,6 +361,21 @@ export function App() {
   selectedRef.current = selected
   rotationRef.current = rotation
   if (speedIdx > 0) lastSpeedRef.current = speedIdx
+
+  // Portrait pauses the run and resumes on rotate (HANDOFF §8).
+  const prePortraitSpeed = useRef<number | null>(null)
+  useEffect(() => {
+    if (layout.mount === 'portrait') {
+      if (prePortraitSpeed.current === null) {
+        prePortraitSpeed.current = speedRef.current
+        setSpeedIdx(0)
+        setAnnounce('Turn the slide — the specimen needs the long edge of your screen. The round is paused.')
+      }
+    } else if (prePortraitSpeed.current !== null) {
+      setSpeedIdx(prePortraitSpeed.current)
+      prePortraitSpeed.current = null
+    }
+  }, [layout.mount])
 
   const newRun = useCallback(() => {
     setSeed(randomSeed())
@@ -202,6 +417,8 @@ export function App() {
     setSpeedIdx((s) => (s === 0 ? lastSpeedRef.current : 0))
   }, [])
 
+  const coarse = useMemo(() => window.matchMedia('(pointer: coarse)').matches, [])
+
   const selectCard = useCallback(
     (i: number) => {
       setSelected((cur) => {
@@ -210,18 +427,21 @@ export function App() {
         if (!id) return cur
         setRotation(aimRotation(id))
         sfx.play('select')
+        // On touch, arming a card is what pauses the game (HANDOFF §6).
+        if (coarse) setSpeedIdx(0)
         return i
       })
     },
-    [duel],
+    [duel, coarse],
   )
 
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas || layout.mount === 'portrait') return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    setCell(layout.cell)
     const dpr = window.devicePixelRatio || 1
     canvas.width = duel.t.width * CELL * dpr
     canvas.height = duel.t.height * CELL * dpr
@@ -382,6 +602,7 @@ export function App() {
         now,
         stormFlash: stormFlashRef.current,
         hint: hintText ? { text: hintText, grade: hintGrade } : null,
+        reach: selectedRef.current !== null ? duel.radii[PLAYER] : null,
       })
 
       if (now - hudAt > 100) {
@@ -392,9 +613,6 @@ export function App() {
           gen: s.gen,
           biomass: Math.floor(duel.biomass[PLAYER]),
           rate: (duel.income(PLAYER) * SPEEDS[speedRef.current]).toFixed(1),
-          playerPop: s.pops[PLAYER],
-          rivalPop: s.pops[RIVAL],
-          radicalsPop: s.pops[RADICALS],
           destroyed: sum.rivalDestroyed,
           captured: sum.radicalsClaimed + sum.rivalConverted,
           inset: s.ringInset,
@@ -437,33 +655,27 @@ export function App() {
 
     raf = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(raf)
-  }, [duel, round, boom])
+  }, [duel, round, boom, layout.mount, layout.cell])
 
   // Pointer input on the board.
-  const cellFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
+  const cellFromPoint = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current
+    if (!canvas) return { x: -1, y: -1 }
+    const rect = canvas.getBoundingClientRect()
     const scaleX = (duel.t.width * CELL) / rect.width
     const scaleY = (duel.t.height * CELL) / rect.height
     return {
-      x: Math.floor(((e.clientX - rect.left) * scaleX) / CELL),
-      y: Math.floor(((e.clientY - rect.top) * scaleY) / CELL),
+      x: Math.floor(((clientX - rect.left) * scaleX) / CELL),
+      y: Math.floor(((clientY - rect.top) * scaleY) / CELL),
     }
   }
 
-  const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    hoverRef.current = cellFromEvent(e)
-  }
-
-  const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const placeAt = (x: number, y: number) => {
     if (selected === null) return
-    const { x, y } = cellFromEvent(e)
     const id = duel.hand[selected]
     const placed = duel.playCard(selected, x, y, rotation)
     if (placed && id) {
-      if (!coached) {
-        setCoached(true)
-        localStorage.setItem('god-coached', '1')
-      }
+      setPlacedOnce(true)
       const pattern = patternById(id)
       flashesRef.current.push({ cells: placed, ttl: 12 })
       const cx = placed.reduce((a, [px]) => a + px, 0) / placed.length + 0.5
@@ -481,6 +693,60 @@ export function App() {
     } else {
       sfx.play('invalid')
     }
+  }
+
+  // The coach completes when time is released after the first placement.
+  useEffect(() => {
+    if (!coached && placedOnce && speedIdx > 0) {
+      setCoached(true)
+      localStorage.setItem('god-coached', '1')
+    }
+  }, [coached, placedOnce, speedIdx])
+
+  const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.nativeEvent instanceof PointerEvent && (e.nativeEvent as PointerEvent).pointerType !== 'mouse') return
+    hoverRef.current = cellFromPoint(e.clientX, e.clientY)
+  }
+
+  const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (selected === null) return
+    const { x, y } = cellFromPoint(e.clientX, e.clientY)
+    placeAt(x, y)
+  }
+
+  // Touch: drag to aim with the ghost 40px above the fingertip; lift commits
+  // inside the reach, cancels outside (HANDOFF §6).
+  const [touchDrag, setTouchDrag] = useState<{ x: number; y: number } | null>(null)
+  const touchDragRef = useRef(false)
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse' || selected === null) return
+    e.preventDefault()
+    touchDragRef.current = true
+    const p = cellFromPoint(e.clientX, e.clientY - 40)
+    hoverRef.current = p
+    setTouchDrag({ x: e.clientX, y: e.clientY })
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse' || !touchDragRef.current) return
+    hoverRef.current = cellFromPoint(e.clientX, e.clientY - 40)
+    setTouchDrag({ x: e.clientX, y: e.clientY })
+  }
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse' || !touchDragRef.current) return
+    touchDragRef.current = false
+    setTouchDrag(null)
+    const p = cellFromPoint(e.clientX, e.clientY - 40)
+    const sel = selectedRef.current
+    if (sel !== null) {
+      const id = duel.hand[sel]
+      if (id && duel.ghostFor(PLAYER, id, p.x, p.y, rotationRef.current).valid) {
+        placeAt(p.x, p.y)
+      } else {
+        sfx.play('invalid')
+      }
+    }
+    hoverRef.current = null
   }
 
   const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -510,172 +776,419 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [togglePause, requestNewRun, debug, duel, selectCard])
 
-  const stormLabel =
-    hud === null ? '' : hud.inset > 0 ? `storm +${hud.inset}` : `storm in ${hud.stormEta}g`
+  // ── derived bits shared by the mounts ────────────────────────────────────
+  const over = hud !== null && hud.status !== 'running'
+  const canShop = useMemo(() => {
+    const slotCost = nextSlotCost(meta)
+    return (
+      (slotCost !== null && meta.ash >= slotCost) ||
+      GENES.some((g) => {
+        const c = upgradeCost(meta, g.key)
+        return c !== null && meta.ash >= c
+      })
+    )
+  }, [meta])
+  const runClear = over && hud.status === 'won' && round === ROUNDS.length
+  const coachStep = coached ? 0 : selected === null && !placedOnce ? 1 : !placedOnce ? 2 : 3
 
-  return (
-    <div className="app">
-      <header className="hud">
-        <h1>THE GAME OF DEATH</h1>
-        <span className="stat biomass">
-          ⬢ {hud?.biomass ?? 0} <em>+{hud?.rate ?? '0.0'}/s</em>
-        </span>
-        <div className="hud-controls">
-          {SPEED_LABELS.map((label, i) => (
-            <button
-              key={label}
-              className={`speed ${speedIdx === i ? 'active' : ''}`}
-              aria-label={i === 0 ? 'pause (space)' : `speed ${label} (key ${i})`}
-              aria-pressed={speedIdx === i}
-              onClick={() => setSpeedIdx(i)}
-            >
-              {label}
-            </button>
-          ))}
-          <button className={`newrun ${armAbandon ? 'armed' : ''}`} onClick={requestNewRun}>
-            {armAbandon ? 'abandon run?' : 'new run'}
-          </button>
+  const canvasEl = (
+    <canvas
+      ref={canvasRef}
+      role="img"
+      aria-label="The battlefield: a Game of Life simulation. Your colony grows from the left, the rival from the right; the board's border shows territory share."
+      style={{ width: layout.cssW, height: layout.cssH }}
+      onMouseMove={onMove}
+      onMouseLeave={() => {
+        if (!touchDragRef.current) hoverRef.current = null
+      }}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+    />
+  )
+
+  const verdictText = over
+    ? hud.status !== 'won'
+      ? 'DEATH'
+      : round < ROUNDS.length
+        ? `ROUND ${round} CLEARED`
+        : 'THE UNIVERSE YIELDS'
+    : ''
+  const outcomeText = over
+    ? hud.status !== 'won'
+      ? `${hud.outcome.toLowerCase().replace(/\.$/, '')} · reached round ${round} of ${ROUNDS.length}`
+      : round < ROUNDS.length
+        ? `${hud.outcome.toLowerCase().replace(/\.$/, '')} · next, ${ROUNDS[round].label}`
+        : `${hud.outcome.toLowerCase().replace(/\.$/, '')} · a full gauntlet, survived`
+    : ''
+
+  const overlayEl = over && (
+    <div className={`overlay ${hud.status}`}>
+      <div className="verdict-block">
+        <div className="verdict">{verdictText}</div>
+        <div className="outcome">{outcomeText}</div>
+      </div>
+      {ashEarned !== null && (
+        <CashOut
+          key={`${seed}-${round}`}
+          breakdown={ashBreakdown(duel, runClear)}
+          bank={meta.ash}
+          meta={`${hud.gen} generations · ${ROUNDS[round - 1].label}`}
+          onGenome={() => setShowGenome(true)}
+          primary={
+            hud.status === 'won' && round < ROUNDS.length
+              ? { label: 'NEXT ROUND →', onClick: nextRound }
+              : { label: 'NEW RUN [N]', onClick: newRun }
+          }
+        />
+      )}
+    </div>
+  )
+
+  // ── portrait ─────────────────────────────────────────────────────────────
+  if (layout.mount === 'portrait') {
+    return (
+      <div className="portrait">
+        <div className="head">
+          <Mark />
+          <span>GAME OF DEATH</span>
+        </div>
+        <div className="spacer" />
+        <div className="rotate-glyph" aria-hidden="true" />
+        <div className="turn">TURN THE SLIDE</div>
+        <div className="why">
+          The specimen is 128 × 80 cells. It needs the long edge of your screen — anything less and
+          the puncta stop being readable.
+        </div>
+        <div className="spacer" />
+        <div className="status">
+          <div className="row">
+            <span className="lbl-sm">RUN IN PROGRESS</span>
+            <span className="v">
+              round {round}/{ROUNDS.length} · gen {hud?.gen ?? 0}
+            </span>
+          </div>
+          <div className="row">
+            <span className="lbl-sm">ASH</span>
+            <span className="v gold">⬡ {meta.ash}</span>
+          </div>
+          <div className="fine">nothing is lost — the round is paused where you left it</div>
+        </div>
+        <div className="sr-only" role="status" aria-live="polite">
+          {announce}
+        </div>
+      </div>
+    )
+  }
+
+  const genomeEl = showGenome && (
+    <Genome
+      meta={meta}
+      onBuySlot={() => setMeta(buySlot)}
+      onBuyGene={(k) => setMeta((m) => buyGene(m, k))}
+      onToggleEquip={(k) => setMeta((m) => toggleEquip(m, k))}
+      onClose={() => setShowGenome(false)}
+    />
+  )
+
+  const srLive = (
+    <div className="sr-only" role="status" aria-live="polite">
+      {announce}
+    </div>
+  )
+
+  const rotateDetent = touchDrag && (
+    <button
+      className="rotate-detent"
+      style={{
+        left: Math.min(window.innerWidth - 54, touchDrag.x + 60),
+        top: Math.max(10, touchDrag.y - 90),
+      }}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        setRotation((r) => (r + 1) % 4)
+      }}
+      aria-label="rotate pattern"
+    >
+      R
+    </button>
+  )
+
+  // ── float mount ──────────────────────────────────────────────────────────
+  if (layout.mount === 'float') {
+    return (
+      <div className={`stage mount-float ${shake} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
+        <div className="board-slot">{canvasEl}</div>
+
+        <div className="island isl-tl">
+          <div className="frost" aria-hidden="true" />
+          <div className="specimen-body">
+            <Mark />
+            <div className="kv">
+              <span className="lbl-xs">SPECIMEN</span>
+              <span className="v">DEATH · {seed.slice(0, 8)}</span>
+            </div>
+            <div className="vdiv" />
+            <div className="kv">
+              <span className="lbl-xs">BIOMASS</span>
+              <span className="biomass-inline">
+                <span className="val num">{hud?.biomass ?? 0}</span>
+                <span className="rate num">+{hud?.rate ?? '0.0'}/s</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="island isl-tc">
+          <div className="round-line">
+            <RoundPips round={round} cleared={over && hud.status === 'won'} />
+            <span className="rn">
+              ROUND {round}/{ROUNDS.length}
+            </span>
+            <span className="rlabel">{ROUNDS[round - 1].label}</span>
+          </div>
+          <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
+        </div>
+
+        <div className="island isl-tr">
+          <FilterSet palette={palette} onToggle={() => setPaletteState((p) => (p === 'gfp' ? 'cfp' : 'gfp'))} />
+          <div className="vdiv" />
           <button
-            className="mute"
-            title={muted ? 'unmute' : 'mute'}
+            className="glyph-btn"
             aria-label={muted ? 'unmute sound' : 'mute sound'}
             aria-pressed={muted}
             onClick={() => setMuted(sfx.toggle())}
           >
-            {muted ? '🔇' : '🔊'}
+            {muted ? '🔇' : '♪'}
           </button>
           <button
-            className="palette-btn"
-            title="faction colors: GFP/mCherry or colorblind-safe CFP/YFP"
-            aria-label="toggle colorblind-safe faction colors"
-            aria-pressed={palette === 'cfp'}
-            onClick={() => setPaletteState((p) => (p === 'gfp' ? 'cfp' : 'gfp'))}
+            className={`glyph-btn newrun-island ${armAbandon ? 'armed' : ''}`}
+            aria-label={armAbandon ? 'confirm abandon run' : 'new run'}
+            title={armAbandon ? 'abandon run?' : 'new run'}
+            onClick={requestNewRun}
           >
-            {palette === 'gfp' ? '◐' : '◑'}
+            {armAbandon ? 'abandon?' : '↺'}
           </button>
-          <button className="genome-btn" onClick={() => setShowGenome(true)}>
-            genome · ⬡ {meta.ash}
-            {(() => {
-              const slotCost = nextSlotCost(meta)
-              const canShop =
-                (slotCost !== null && meta.ash >= slotCost) ||
-                GENES.some((g) => {
-                  const c = upgradeCost(meta, g.key)
-                  return c !== null && meta.ash >= c
-                })
-              return canShop ? <span className="shop-badge" /> : null
-            })()}
+          <div className="vdiv" />
+          <button
+            className="ash-readout"
+            onClick={() => setShowGenome(true)}
+            aria-label={`genome — ${meta.ash} ash banked`}
+          >
+            <span className="lbl-xs">ASH</span>
+            <span className="val num">⬡ {meta.ash}</span>
+            {canShop && <span className="shop-badge" />}
           </button>
         </div>
-      </header>
 
-      <div className="subbar" title="the board's frame is the territory gauge: green you, red rival, slate radicals">
-        <span className="stat round">
-          round {round}/{ROUNDS.length} · {ROUNDS[round - 1].label}
+        <div className="island isl-bl">
+          <ThrottleWell speedIdx={speedIdx} onSet={setSpeedIdx} legends />
+          {coachStep > 0 && !over && (
+            <CoachStep n={3} title="RELEASE TIME" state={coachStep === 3 ? 'active' : 'pending'} className="coach-3">
+              Income accrues per generation. Running hot is how you get rich.
+            </CoachStep>
+          )}
+        </div>
+
+        <div className="island isl-bc">
+          <Hand
+            duel={duel}
+            biomass={hud?.biomass ?? 0}
+            selected={selected}
+            rotation={rotation}
+            onSelect={selectCard}
+            variant="float"
+          />
+          {coachStep > 0 && !over && (
+            <CoachStep n={1} title="PICK A CARD" state={coachStep === 1 ? 'active' : 'pending'} className="coach-1">
+              Press <b>Q</b>, <b>W</b> or <b>E</b> — or click one. Time is already held.
+            </CoachStep>
+          )}
+        </div>
+
+        <div className="island isl-br">
+          <Tickers hud={hud} />
+          <div className="ticker-meta num">
+            <span>gen {hud?.gen ?? 0}</span>
+            <span>10× objective</span>
+          </div>
+        </div>
+
+        {coachStep > 0 && !over && (
+          <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">
+            The ghost double-simulates {TUNING.foresightGens} generations and grades the spot before you pay.
+          </CoachStep>
+        )}
+        {overlayEl}
+        {rotateDetent}
+        {genomeEl}
+        {srLive}
+      </div>
+    )
+  }
+
+  // ── dock mounts (rail / bottom) ──────────────────────────────────────────
+  const labelStrip = (
+    <div className="label-strip">
+      <Mark />
+      <div className="lockup">
+        <span className="lockup-over">THE GAME OF</span>
+        <span className="lockup-name">DEATH</span>
+      </div>
+      <div className="vdiv" />
+      <div className="kv">
+        <span className="lbl-sm">SPECIMEN</span>
+        <span style={{ fontSize: 12, color: 'var(--dim)' }}>seed {seed.slice(0, 10)}</span>
+      </div>
+      <div style={{ flex: 1 }} />
+      <div className="round-line">
+        <span className="lbl-sm">ROUND</span>
+        <RoundPips round={round} cleared={over && hud.status === 'won'} />
+        <span className="rn">
+          {round}/{ROUNDS.length}
         </span>
-        <span className="stat">gen {hud?.gen ?? 0}</span>
-        <span className="stat storm">{stormLabel}</span>
-        <span className="subbar-spacer" />
-        <span className="stat kills" key={`k${hud?.destroyed ?? 0}`}>
-          ☠ {(hud?.destroyed ?? 0).toLocaleString()}
-        </span>
-        <span className="stat captures" key={`c${hud?.captured ?? 0}`}>
-          ◈ {hud?.captured ?? 0}
-        </span>
+        <span className="rlabel">{over && hud.status === 'won' ? 'cleared' : ROUNDS[round - 1].label}</span>
+      </div>
+    </div>
+  )
+
+  const footerStrip = (
+    <div className={`footer-strip ${over ? 'spent' : ''}`}>
+      <div className="gen-group">
+        <span className="lbl-sm">GEN</span>
+        <span className="val num">{hud?.gen ?? 0}</span>
+      </div>
+      <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
+      <Tickers hud={hud} />
+    </div>
+  )
+
+  const narrow = layout.railW === 148
+
+  const rail = (
+    <div className={`rail ${narrow ? 'narrow' : ''} ${over ? 'dimmed' : ''}`}>
+      <div className="rail-panel">
+        <span className="lbl-sm">BIOMASS</span>
+        <div className="readout">
+          <span className="glyph">⬢</span>
+          <span className="val num">{hud?.biomass ?? 0}</span>
+          <span className="rate num">+{hud?.rate ?? '0.0'}/s</span>
+        </div>
+        <div className="capacity-track">
+          <span style={{ width: `${Math.min(100, ((hud?.biomass ?? 0) / 170) * 100)}%` }} />
+        </div>
       </div>
 
-      <div className={`board-wrap ${shake} ${speedIdx === 0 ? 'planning' : ''}`}>
-        <canvas
-          ref={canvasRef}
-          role="img"
-          aria-label="The battlefield: a Game of Life simulation. Your colony grows from the left, the rival from the right; the board's border shows territory share."
-          style={{ aspectRatio: `${duel.t.width} / ${duel.t.height}` }}
-          onMouseMove={onMove}
-          onMouseLeave={() => (hoverRef.current = null)}
-          onClick={onClick}
-          onContextMenu={onContextMenu}
-        />
-        {!coached && hud && hud.status === 'running' && (
-          <div className="coach">
-            <span>
-              <b>Q/W/E</b> pick a card
-            </span>
-            <span>
-              <b>R</b> rotates · click the slide to seed
-            </span>
-            <span>
-              <b>space</b> holds time while you plan
-            </span>
-          </div>
-        )}
-        {hud && hud.status !== 'running' && (
-          <div className={`overlay ${hud.status}`}>
-            <div className="verdict">
-              {hud.status !== 'won'
-                ? 'DEATH'
-                : round < ROUNDS.length
-                  ? `ROUND ${round} CLEARED`
-                  : 'THE UNIVERSE YIELDS'}
-            </div>
-            <div className="outcome">
-              {hud.status !== 'won'
-                ? `${hud.outcome} You reached round ${round} of ${ROUNDS.length}.`
-                : round < ROUNDS.length
-                  ? `${hud.outcome} Next: ${ROUNDS[round].label}.`
-                  : `${hud.outcome} A full gauntlet, survived.`}
-            </div>
-            {ashEarned !== null && (
-              <CashOut
-                key={`${seed}-${round}`}
-                breakdown={ashBreakdown(duel, hud.status === 'won' && round === ROUNDS.length)}
-                bank={meta.ash}
-              />
-            )}
-            <div className="overlay-actions">
-              <button onClick={() => setShowGenome(true)}>genome</button>
-              {hud.status === 'won' && round < ROUNDS.length ? (
-                <button className="primary" onClick={nextRound}>
-                  next round →
-                </button>
-              ) : (
-                <button className="primary" onClick={newRun}>
-                  new run [n]
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <Hand
-        duel={duel}
-        biomass={hud?.biomass ?? 0}
-        selected={selected}
-        rotation={rotation}
-        onSelect={selectCard}
-      />
-
-      {showGenome && (
-        <Genome
-          meta={meta}
-          onBuySlot={() => setMeta(buySlot)}
-          onBuyGene={(k) => setMeta((m) => buyGene(m, k))}
-          onToggleEquip={(k) => setMeta((m) => toggleEquip(m, k))}
-          onClose={() => setShowGenome(false)}
-        />
+      {narrow && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <RoundPips round={round} cleared={over && hud.status === 'won'} />
+          <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
+        </div>
       )}
 
-      <div className="sr-only" role="status" aria-live="polite">
-        {announce}
+      <div className="throttle-block">
+        <div className="rail-group-label">
+          <span className="lbl-sm">THROTTLE</span>
+        </div>
+        <ThrottleWell speedIdx={speedIdx} onSet={setSpeedIdx} legends={!narrow} skipOne={narrow} />
+        {coachStep > 0 && !over && (
+          <div style={{ marginTop: 8 }}>
+            <CoachStep n={3} title="RELEASE TIME" state={coachStep === 3 ? 'active' : 'pending'}>
+              Income accrues per generation. Running hot is how you get rich.
+            </CoachStep>
+          </div>
+        )}
       </div>
 
-      <footer className="help">
-        <span>click card → click board to seed</span>
-        <span>ghost previews the impact {TUNING.foresightGens} generations out</span>
-        <span>right-click / R rotate</span>
-        <span>space pause · 1–4 throttle</span>
-        <span className="seed">seed {seed}</span>
-      </footer>
+      <div className="rail-spacer" />
+
+      <div className="hand-block">
+        <div className="rail-group-label">
+          <span className="lbl-sm">{over ? 'HAND · SPENT' : 'HAND'}</span>
+          <span className="aside">REACH {duel.radii[PLAYER]} ON SLIDE</span>
+        </div>
+        <Hand
+          duel={duel}
+          biomass={hud?.biomass ?? 0}
+          selected={selected}
+          rotation={rotation}
+          onSelect={selectCard}
+          variant={narrow ? 'compact' : 'rail'}
+        />
+        {coachStep > 0 && !over && (
+          <div style={{ marginTop: 8 }}>
+            <CoachStep n={1} title="PICK A CARD" state={coachStep === 1 ? 'active' : 'pending'}>
+              Press <b>Q</b>, <b>W</b> or <b>E</b> — or click one. Time is already held.
+            </CoachStep>
+          </div>
+        )}
+      </div>
+
+      <button
+        className={`genome-plate ${over ? 'lit' : ''}`}
+        onClick={() => setShowGenome(true)}
+        aria-label={`open genome — ${meta.ash} ash banked`}
+      >
+        <div className="kv">
+          <span className="lbl-sm">GENOME</span>
+          <span className="ash-readout">
+            <span className="val num">⬡ {meta.ash}</span>
+            {canShop && <span className="shop-badge" />}
+          </span>
+        </div>
+        <span className="spend-chip">SPEND</span>
+      </button>
+
+      <div className="utility-row">
+        <button
+          aria-label={muted ? 'unmute sound' : 'mute sound'}
+          aria-pressed={muted}
+          onClick={() => setMuted(sfx.toggle())}
+        >
+          {muted ? '🔇' : '♪'}
+        </button>
+        <button
+          aria-label="swap filter set (colorblind-safe stains)"
+          aria-pressed={palette === 'cfp'}
+          title={palette === 'gfp' ? 'filter set: GFP/mCherry' : 'filter set: CFP/YFP'}
+          onClick={() => setPaletteState((p) => (p === 'gfp' ? 'cfp' : 'gfp'))}
+        >
+          {palette === 'gfp' ? '◐' : '◑'}
+        </button>
+        <button
+          className={`newrun ${armAbandon ? 'armed' : ''}`}
+          onClick={requestNewRun}
+          aria-label={armAbandon ? 'confirm abandon run' : 'start a new run'}
+        >
+          {armAbandon ? 'abandon?' : 'NEW RUN'}
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className={`stage mount-${layout.mount}`}>
+      <div className="board-col">
+        {!narrow && labelStrip}
+        <div className={`board-wrap ${shake}`}>
+          {canvasEl}
+          {coachStep > 0 && !over && (
+            <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">
+              The ghost double-simulates {TUNING.foresightGens} generations and grades the spot
+              before you pay.
+            </CoachStep>
+          )}
+          {overlayEl}
+        </div>
+        {!narrow && footerStrip}
+      </div>
+      {rail}
+      {rotateDetent}
+      {genomeEl}
+      {srLive}
     </div>
   )
 }

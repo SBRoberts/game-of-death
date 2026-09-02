@@ -85,7 +85,17 @@ export interface FxState {
   hoverCell: { x: number; y: number } | null
   now: number
   stormFlash: number
+  /** Placement evaluation, drawn beside the ghost where the eyes already are. */
+  hint: { text: string; grade: 'poor' | 'fair' | 'good' | 'great' | null } | null
 }
+
+const GRADE_STEPS = { poor: 1, fair: 2, good: 3, great: 4 } as const
+const GRADE_COLORS = {
+  poor: '#8a93a5',
+  fair: '#d7e3ff',
+  good: '#42f59b',
+  great: '#c6ff5e',
+} as const
 
 // ── cached layers ──────────────────────────────────────────────────────────
 let bloomCanvas: HTMLCanvasElement | null = null
@@ -385,6 +395,37 @@ export function render(
   }
   ctx.fillStyle = vignette
   ctx.fillRect(0, 0, W, H)
+
+  // Cursor-side placement evaluation: the verdict lives where you're aiming.
+  if (fx.hint && ghost) {
+    const gx = Math.max(...ghost.cells.map(([x]) => x))
+    const gy = Math.min(...ghost.cells.map(([, y]) => y))
+    ctx.font = '11px ui-monospace, Menlo, monospace'
+    ctx.textAlign = 'left'
+    const grade = fx.hint.grade
+    const gradeText = grade ? ` ${grade.toUpperCase()}` : ''
+    const pips = grade ? '●'.repeat(GRADE_STEPS[grade]) + '○'.repeat(4 - GRADE_STEPS[grade]) : ''
+    const textW = ctx.measureText(fx.hint.text).width
+    const extraW = grade ? ctx.measureText(` ${pips}${gradeText}`).width : 0
+    const boxW = textW + extraW + 18
+    const boxH = 22
+    let bx = (gx + 2) * CELL
+    let by = (gy - 1) * CELL - boxH / 2
+    if (bx + boxW > W - 4) bx = Math.max(4, (Math.min(...ghost.cells.map(([x]) => x)) - 2) * CELL - boxW)
+    by = Math.min(Math.max(4, by), H - boxH - 4)
+    ctx.fillStyle = 'rgba(8,11,17,0.92)'
+    ctx.strokeStyle = grade ? GRADE_COLORS[grade] : 'rgba(255,140,110,0.6)'
+    ctx.beginPath()
+    ctx.roundRect(bx, by, boxW, boxH, 5)
+    ctx.fill()
+    ctx.stroke()
+    ctx.fillStyle = grade ? '#c9d4e6' : '#ff9f8a'
+    ctx.fillText(fx.hint.text, bx + 9, by + 15)
+    if (grade) {
+      ctx.fillStyle = GRADE_COLORS[grade]
+      ctx.fillText(` ${pips}${gradeText}`, bx + 9 + textW, by + 15)
+    }
+  }
 
   // Floating kill counts — drawn above the glass so they always read.
   for (const f of fx.floats) {

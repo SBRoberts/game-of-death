@@ -33,8 +33,10 @@ import {
   buySlot,
   earnAsh,
   loadMeta,
+  loadoutOf,
   nextSlotCost,
   toggleEquip,
+  upgradeCost,
 } from './meta'
 import { GENES } from '../sim'
 
@@ -72,8 +74,6 @@ interface Hud {
   stormEta: number
   status: Duel['status']
   outcome: string
-  hint: string | null
-  grade: 'poor' | 'fair' | 'good' | 'great' | null
 }
 
 const PROBLEM_TEXT: Record<string, string> = {
@@ -110,7 +110,7 @@ export function App() {
     return new Duel(
       round === 1 ? seed : `${seed}-r${round}`,
       { aiSamples: r.aiSamples, aiActEvery: r.aiActEvery },
-      metaRef.current.equipped,
+      loadoutOf(metaRef.current),
       r.rivalLoadout,
     )
   }, [seed, run, round])
@@ -200,7 +200,7 @@ export function App() {
     let prevInset = duel.state.ringInset
     let prevStatus = duel.status
     let hintText: string | null = null
-    let hintGrade: Hud['grade'] = null
+    let hintGrade: 'poor' | 'fair' | 'good' | 'great' | null = null
     let lastBoomAt = 0
     let lastCrunchAt = 0
     let lastDeaths = 0
@@ -339,6 +339,7 @@ export function App() {
         hoverCell: ghost ? null : hoverRef.current,
         now,
         stormFlash: stormFlashRef.current,
+        hint: hintText ? { text: hintText, grade: hintGrade } : null,
       })
 
       if (now - hudAt > 100) {
@@ -358,8 +359,6 @@ export function App() {
           stormEta: Math.max(0, duel.t.ringGrace - s.gen),
           status: duel.status,
           outcome: duel.outcome,
-          hint: hintText,
-          grade: hintGrade,
         })
       }
       raf = requestAnimationFrame(frame)
@@ -519,7 +518,10 @@ export function App() {
               const slotCost = nextSlotCost(meta)
               const canShop =
                 (slotCost !== null && meta.ash >= slotCost) ||
-                GENES.some((g) => !meta.owned.includes(g.key) && meta.ash >= g.ashCost)
+                GENES.some((g) => {
+                  const c = upgradeCost(meta, g.key)
+                  return c !== null && meta.ash >= c
+                })
               return canShop ? <span className="shop-badge" /> : null
             })()}
           </button>
@@ -540,12 +542,6 @@ export function App() {
       </div>
 
       <div className={`board-wrap ${shake} ${speedIdx === 0 ? 'planning' : ''}`}>
-        {hud?.hint && (
-          <div className={`impact-readout ${hud.grade ?? 'problem'}`}>
-            {hud.hint}
-            {hud.grade && <b>{hud.grade}</b>}
-          </div>
-        )}
         <canvas
           ref={canvasRef}
           style={{ width: duel.t.width * CELL, maxWidth: '100%', aspectRatio: `${duel.t.width} / ${duel.t.height}` }}

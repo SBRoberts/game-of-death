@@ -6,7 +6,7 @@
 
 import { createState, setCells, step } from './engine'
 import { PATTERNS, WILD_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
-import { geneByKey } from './genes'
+import { geneByKey, normalizeChoice, type GeneChoice } from './genes'
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, mask, type Rule, type SimState } from './types'
@@ -29,8 +29,8 @@ export class Duel {
   outcome = ''
   /** When true, the rival plays itself inside tick(); harness can disable. */
   autoRival = true
-  /** Equipped gene keys, applied at construction. */
-  readonly loadout: readonly string[]
+  /** Equipped gene choices (key or key+level), applied at construction. */
+  readonly loadout: readonly GeneChoice[]
   /** The player's draw pool: base deck plus unlocked special cards. */
   readonly playerPool: readonly Pattern[]
   /** The rival's pool — grows with its own loadout in later rounds. */
@@ -46,30 +46,42 @@ export class Duel {
   constructor(
     seed: string,
     overrides: Partial<Tuning> = {},
-    loadout: readonly string[] = [],
-    rivalLoadout: readonly string[] = [],
+    loadout: readonly GeneChoice[] = [],
+    rivalLoadout: readonly GeneChoice[] = [],
   ) {
     this.seed = seed
     this.loadout = loadout
 
     // A faction's genes build its rule, pool, and economy — all owned by that
-    // faction alone. (The balance sweep caught the earlier version leaking
-    // economy genes to both sides through shared tuning.)
+    // faction alone. Each gene applies at its chosen level; card genes may
+    // override the card's cost or upgrade its cell-type variant.
     const t = { ...TUNING, ...overrides }
     this.t = t
-    const build = (keys: readonly string[]) => {
+    const ROMAN = ['', '', ' II', ' III']
+    const build = (choices: readonly GeneChoice[]) => {
       const rule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
       const pool: Pattern[] = [...PATTERNS]
       let radius = t.placementRadius
       let incomeScale = t.incomeScale
       let startBonus = 0
-      for (const g of keys.map(geneByKey)) {
+      for (const choice of choices.map(normalizeChoice)) {
+        const gene = geneByKey(choice.key)
+        const level = Math.min(Math.max(choice.level, 1), gene.levels.length)
+        const g = gene.levels[level - 1]
         if (g.addSurvive) rule.survive |= mask(...g.addSurvive)
         if (g.addBirth) rule.birth |= mask(...g.addBirth)
-        if (g.card) pool.push(patternById(g.card))
         if (g.radius !== undefined) radius = g.radius
-        if (g.incomeScale !== undefined) incomeScale = g.incomeScale
         if (g.startBonus) startBonus += g.startBonus
+        if (g.card) {
+          const base = patternById(g.card)
+          pool.push({
+            ...base,
+            name: base.name + ROMAN[level],
+            cost: g.cardCost ?? base.cost,
+            cellType: g.cardType ?? base.cellType,
+            tip: level > 1 ? g.desc : base.tip,
+          })
+        }
       }
       return { rule, pool, radius, incomeScale, startBonus }
     }
@@ -155,6 +167,11 @@ export class Duel {
     if (faction === PLAYER) return this.playerPool
     if (faction === RIVAL) return this.rivalPool
     return PATTERNS
+  }
+
+  /** Resolve a pattern id to THIS faction's (possibly leveled) variant. */
+  patternFor(faction: number, id: string): Pattern {
+    return this.poolFor(faction).find((p) => p.id === id) ?? patternById(id)
   }
 
   /** Test/dev hook: end the duel now (wired to a key only in ?debug mode). */
@@ -278,7 +295,7 @@ export class Duel {
     valid: boolean
     problem: 'ok' | 'storm' | 'occupied' | 'far' | 'blocked' | 'poor'
   } {
-    const pattern = patternById(patternId)
+    const pattern = this.patternFor(faction, patternId)
     const cells = this.patternCells(pattern, ox, oy, rot)
     let problem = this.placeProblem(faction, cells, pattern.clearance) as
       | 'ok'
@@ -307,7 +324,7 @@ export class Duel {
   /** Internal placement, shared by player and AI. */
   tryPlace(faction: number, patternId: string, ox: number, oy: number, rot: number): boolean {
     if (this.status !== 'running') return false
-    const pattern = patternById(patternId)
+    const pattern = this.patternFor(faction, patternId)
     if (this.biomass[faction] < pattern.cost) return false
     const cells = this.patternCells(pattern, ox, oy, rot)
     if (!this.canPlace(faction, cells, pattern.clearance)) return false
@@ -320,7 +337,7 @@ export class Duel {
   playCard(handIdx: number, ox: number, oy: number, rot: number): Array<[number, number]> | null {
     const id = this.hand[handIdx]
     if (!id) return null
-    const pattern = patternById(id)
+    const pattern = this.patternFor(PLAYER, id)
     const cells = this.patternCells(pattern, ox, oy, rot)
     if (!this.tryPlace(PLAYER, id, ox, oy, rot)) return null
     this.hand[handIdx] = this.draw()

@@ -203,10 +203,41 @@ describe('duel: genome loadout', () => {
 
   it('economy genes are per-faction, not global', () => {
     const d = new Duel('econ-test', {}, ['thrifty', 'ranger'])
-    expect(d.biomass[1]).toBe(d.t.startBiomass + 24)
+    expect(d.biomass[1]).toBe(d.t.startBiomass + 12) // level 1
     expect(d.biomass[2]).toBe(d.t.startBiomass) // rival gets no head start
-    expect(d.radii[1]).toBe(14)
+    expect(d.radii[1]).toBe(12)
     expect(d.radii[2]).toBe(10)
+  })
+
+  it('gene levels deepen the axis: leveled loadouts apply their rung', () => {
+    const d = new Duel('level-test', {}, [
+      { key: 'hardy', level: 3 },
+      { key: 'vampire', level: 3 },
+      { key: 'martyr', level: 2 },
+      { key: 'thrifty', level: 3 },
+    ])
+    const survive = d.state.cfg.factions[1].rule.survive
+    expect(survive & mask(6)).toBeTruthy()
+    expect(survive & mask(7)).toBeTruthy()
+    expect(survive & mask(8)).toBeTruthy()
+    const vamp = d.playerPool.find((p) => p.id === 'vampire')
+    expect(vamp?.cellType).toBe(5) // VAMPIRE_ELDEST: feeds every generation
+    expect(vamp?.name).toBe('Vampire III')
+    const martyr = d.playerPool.find((p) => p.id === 'martyr')
+    expect(martyr?.cost).toBe(7) // level 2: cheaper mines
+    expect(d.biomass[1]).toBe(d.t.startBiomass + 40)
+  })
+
+  it('big martyr (level 3) blasts at radius 2', async () => {
+    const { MARTYR_GREAT } = await import('../celltypes')
+    const s = createState(cfg())
+    setCells(s, 1, [[10, 10]], MARTYR_GREAT)
+    // Supported enemy two cells away — outside a normal blast, inside a great one.
+    setCells(s, 2, [[12, 10], [13, 10], [13, 9]])
+    setCells(s, 2, [[11, 10]]) // adjacent trigger pressure
+    step(s)
+    expect(s.cells[10 * 40 + 10]).toBe(0) // martyr died
+    expect(s.cells[10 * 40 + 12]).toBe(0) // radius-2 kill
   })
 
   it('rival loadout mutates faction 2 and its pool, not the player', () => {

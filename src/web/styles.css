@@ -710,6 +710,40 @@ canvas {
   flex: 1;
 }
 
+.gene-pips {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+
+.gene-pips .pip {
+  font-style: normal;
+  color: var(--dim);
+}
+
+.gene-pips .pip.full {
+  color: var(--gold);
+}
+
+.gene-next {
+  color: #7d8ba2;
+  font-size: 10.5px;
+  border-left: 2px solid var(--line);
+  padding-left: 7px;
+}
+
+.gene-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.gene-actions button {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
 .gene button.equipped {
   border-color: var(--you);
   color: var(--you);

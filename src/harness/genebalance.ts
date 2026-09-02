@@ -8,13 +8,13 @@
  *   npm run balance -- 32
  */
 
-import { Duel, GENES, PLAYER, RIVAL, rngFrom, smartAct } from '../sim'
+import { Duel, GENES, PLAYER, RIVAL, rngFrom, smartAct, type GeneChoice } from '../sim'
 
-const nDuels = Number(process.argv[2] ?? 16)
+const nDuels = Number(process.argv[2] ?? 12)
 const FLAG_HIGH = 65
 const FLAG_LOW = 35
 
-function runDuel(seed: string, loadout: string[]): Duel {
+function runDuel(seed: string, loadout: GeneChoice[]): Duel {
   const d = new Duel(seed, {}, loadout, [])
   d.autoRival = false
   const pr = rngFrom(seed, 'policy-player')
@@ -34,7 +34,7 @@ function runDuel(seed: string, loadout: string[]): Duel {
   return d
 }
 
-console.log(`gene balance sweep: ${nDuels} duels per gene, planner mirror\n`)
+console.log(`gene balance sweep: ${nDuels} duels per gene LEVEL, planner mirror\n`)
 
 // Paired design: every loadout (and the baseline) replays the SAME seed set,
 // so a gene's delta is attributable to the gene, not to seed-family luck.
@@ -47,20 +47,23 @@ console.log(`${'(vanilla)'.padEnd(12)} ${baseline.toFixed(0).padStart(3)}% basel
 
 const flagged: string[] = []
 for (const gene of GENES) {
-  let wins = 0
-  const t0 = performance.now()
-  for (let i = 0; i < nDuels; i++) {
-    if (runDuel(`balance-${i}`, [gene.key]).status === 'won') wins++
+  for (let level = 1; level <= gene.levels.length; level++) {
+    let wins = 0
+    const t0 = performance.now()
+    for (let i = 0; i < nDuels; i++) {
+      if (runDuel(`balance-${i}`, [{ key: gene.key, level }]).status === 'won') wins++
+    }
+    const rate = (wins / nDuels) * 100
+    const delta = rate - baseline
+    const rung = `${gene.key}@${level}`
+    const mark = rate >= FLAG_HIGH ? ' ⚠ STRONG' : rate <= FLAG_LOW ? ' ⚠ WEAK' : ''
+    if (mark) flagged.push(rung)
+    const dt = ((performance.now() - t0) / 1000).toFixed(0)
+    console.log(
+      `${rung.padEnd(14)} ${rate.toFixed(0).padStart(3)}% ` +
+        `(${delta >= 0 ? '+' : ''}${delta.toFixed(0)} vs vanilla, ${dt}s)${mark}`,
+    )
   }
-  const rate = (wins / nDuels) * 100
-  const delta = rate - baseline
-  const mark = rate >= FLAG_HIGH ? ' ⚠ STRONG' : rate <= FLAG_LOW ? ' ⚠ WEAK' : ''
-  if (mark) flagged.push(gene.key)
-  const dt = ((performance.now() - t0) / 1000).toFixed(0)
-  console.log(
-    `${gene.key.padEnd(12)} ${rate.toFixed(0).padStart(3)}% ` +
-      `(${delta >= 0 ? '+' : ''}${delta.toFixed(0)} vs vanilla, ${dt}s)${mark}`,
-  )
 }
 
 console.log(

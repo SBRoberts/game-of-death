@@ -177,17 +177,21 @@ export function step(s: SimState): void {
     const x = i % w
     const y = Math.floor(i / w)
     if (!inSafe(x, y)) continue
+    const radius = CELL_TYPES[types[i]].blastRadius ?? 1
     let kills = 0
-    for (const [dx, dy] of NEIGHBORS) {
-      const xx = x + dx
-      const yy = y + dy
-      if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
-      const j = yy * w + xx
-      if (next[j] > 0 && next[j] !== cells[i]) {
-        deaths[next[j]]++
-        next[j] = 0
-        nextTypes[j] = 0
-        kills++
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx === 0 && dy === 0) continue
+        const xx = x + dx
+        const yy = y + dy
+        if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
+        const j = yy * w + xx
+        if (next[j] > 0 && next[j] !== cells[i]) {
+          deaths[next[j]]++
+          next[j] = 0
+          nextTypes[j] = 0
+          kills++
+        }
       }
     }
     s.blasts.push({ i, kills })

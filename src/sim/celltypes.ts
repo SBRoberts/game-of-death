@@ -22,12 +22,17 @@ export interface CellTypeDef {
   drainEvery?: number
   /** On a rules-death (not the storm), kills every adjacent enemy cell. */
   onDeathKill?: boolean
+  /** Chebyshev radius of the death blast (default 1 = the 8 neighbors). */
+  blastRadius?: number
 }
 
 export const NORMAL = 0
 export const ELDER = 1
 export const VAMPIRE = 2
 export const MARTYR = 3
+export const VAMPIRE_SWIFT = 4
+export const VAMPIRE_ELDEST = 5
+export const MARTYR_GREAT = 6
 
 export const CELL_TYPES: readonly CellTypeDef[] = [
   { key: 'normal', name: 'Cell' },
@@ -53,5 +58,29 @@ export const CELL_TYPES: readonly CellTypeDef[] = [
     key: 'martyr',
     name: 'Martyr',
     onDeathKill: true,
+  },
+  {
+    key: 'vampire-swift',
+    name: 'Vampire II',
+    surviveMask: mask(1, 2, 3, 4, 5, 6),
+    steadfast: true,
+    unconvertible: true,
+    drain: true,
+    drainEvery: 2,
+  },
+  {
+    key: 'vampire-eldest',
+    name: 'Vampire III',
+    surviveMask: mask(1, 2, 3, 4, 5, 6),
+    steadfast: true,
+    unconvertible: true,
+    drain: true,
+    drainEvery: 1,
+  },
+  {
+    key: 'martyr-great',
+    name: 'Martyr III',
+    onDeathKill: true,
+    blastRadius: 2,
   },
 ]

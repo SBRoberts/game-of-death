@@ -47,8 +47,9 @@ export const TUNING = {
   // capturable matter (flank a wild cell and it defects to you).
   wildsCount: 36,
 
-  // Throttle stops, generations per second (index 0 = paused).
-  speeds: [0, 4, 8, 16, 32],
+  // Throttle stops, generations per second (index 0 = paused). 1× is slow
+  // enough to think at; the top stop is for riding out settled positions.
+  speeds: [0, 2, 5, 12, 30],
 }
 
 export type Tuning = typeof TUNING

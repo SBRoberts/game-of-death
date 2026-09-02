@@ -4,14 +4,15 @@
  * receives the equipped loadout as a plain argument.
  */
 
-import { Duel, SLOT_COSTS, geneByKey } from '../sim'
+import { Duel, SLOT_COSTS, geneByKey, maxLevel, type GeneChoice } from '../sim'
 
 const KEY = 'god-meta-v1'
 
 export interface MetaState {
   ash: number
   slots: number
-  owned: string[]
+  /** Gene key → owned level (absent = not owned). */
+  levels: Record<string, number>
   equipped: string[]
 }
 
@@ -19,18 +20,28 @@ export function loadMeta(): MetaState {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
-      const m = JSON.parse(raw) as MetaState
+      const m = JSON.parse(raw) as MetaState & { owned?: string[] }
+      // v1 migration: an `owned` array becomes level-1 entries.
+      const levels: Record<string, number> = { ...(m.levels ?? {}) }
+      if (Array.isArray(m.owned)) for (const k of m.owned) levels[k] ??= 1
       return {
         ash: m.ash | 0,
         slots: Math.min(m.slots | 0, SLOT_COSTS.length),
-        owned: Array.isArray(m.owned) ? m.owned : [],
-        equipped: Array.isArray(m.equipped) ? m.equipped.slice(0, m.slots | 0) : [],
+        levels,
+        equipped: Array.isArray(m.equipped)
+          ? m.equipped.filter((k) => levels[k]).slice(0, m.slots | 0)
+          : [],
       }
     }
   } catch {
     /* corrupted or unavailable: start fresh */
   }
-  return { ash: 0, slots: 0, owned: [], equipped: [] }
+  return { ash: 0, slots: 0, levels: {}, equipped: [] }
+}
+
+/** The equipped loadout with levels, ready to hand to a Duel. */
+export function loadoutOf(m: MetaState): GeneChoice[] {
+  return m.equipped.map((key) => ({ key, level: m.levels[key] ?? 1 }))
 }
 
 function save(m: MetaState): MetaState {
@@ -99,14 +110,26 @@ export function buySlot(m: MetaState): MetaState {
   return save({ ...m, ash: m.ash - cost, slots: m.slots + 1 })
 }
 
+/** Ash cost of the NEXT level of a gene (null when maxed). */
+export function upgradeCost(m: MetaState, key: string): number | null {
+  const level = m.levels[key] ?? 0
+  if (level >= maxLevel(key)) return null
+  return geneByKey(key).levels[level].ashCost
+}
+
+/** Buy level 1, or the next level if already owned. */
 export function buyGene(m: MetaState, key: string): MetaState {
-  const gene = geneByKey(key)
-  if (m.owned.includes(key) || m.ash < gene.ashCost) return m
-  return save({ ...m, ash: m.ash - gene.ashCost, owned: [...m.owned, key] })
+  const cost = upgradeCost(m, key)
+  if (cost === null || m.ash < cost) return m
+  return save({
+    ...m,
+    ash: m.ash - cost,
+    levels: { ...m.levels, [key]: (m.levels[key] ?? 0) + 1 },
+  })
 }
 
 export function toggleEquip(m: MetaState, key: string): MetaState {
-  if (!m.owned.includes(key)) return m
+  if (!m.levels[key]) return m
   const equipped = m.equipped.includes(key)
     ? m.equipped.filter((k) => k !== key)
     : m.equipped.length < m.slots

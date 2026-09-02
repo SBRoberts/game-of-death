@@ -1,5 +1,5 @@
 import { GENES } from '../sim'
-import { nextSlotCost, type MetaState } from './meta'
+import { nextSlotCost, upgradeCost, type MetaState } from './meta'
 
 interface GenomeProps {
   meta: MetaState
@@ -48,30 +48,48 @@ export function Genome({ meta, onBuySlot, onBuyGene, onToggleEquip, onClose }: G
 
         <div className="genome-list">
           {GENES.map((g) => {
-            const owned = meta.owned.includes(g.key)
+            const level = meta.levels[g.key] ?? 0
             const equipped = meta.equipped.includes(g.key)
+            const cost = upgradeCost(meta, g.key)
+            // Show what you HAVE, or what level 1 would give you.
+            const shown = g.levels[Math.max(level, 1) - 1]
             return (
-              <div key={g.key} className={`gene ${owned ? 'owned' : ''} ${equipped ? 'on' : ''}`}>
+              <div key={g.key} className={`gene ${level > 0 ? 'owned' : ''} ${equipped ? 'on' : ''}`}>
                 <div className="gene-head">
                   <span className="gene-name">{g.name}</span>
+                  <span className="gene-pips">
+                    {g.levels.map((_, i) => (
+                      <i key={i} className={i < level ? 'pip full' : 'pip'}>
+                        {i < level ? '◆' : '◇'}
+                      </i>
+                    ))}
+                  </span>
                   <span className={`gene-kind kind-${g.kind}`}>
                     {g.kind === 'card' ? 'card' : 'rule'}
                   </span>
                 </div>
-                <p>{g.desc}</p>
-                {owned ? (
-                  <button
-                    className={equipped ? 'equipped' : ''}
-                    disabled={!equipped && meta.equipped.length >= meta.slots}
-                    onClick={() => onToggleEquip(g.key)}
-                  >
-                    {equipped ? 'equipped ✓' : 'equip'}
-                  </button>
-                ) : (
-                  <button disabled={meta.ash < g.ashCost} onClick={() => onBuyGene(g.key)}>
-                    buy · ⬡ {g.ashCost}
-                  </button>
+                <p>{shown.desc}</p>
+                {level > 0 && cost !== null && (
+                  <p className="gene-next">next: {g.levels[level].desc}</p>
                 )}
+                <div className="gene-actions">
+                  {level > 0 && (
+                    <button
+                      className={equipped ? 'equipped' : ''}
+                      disabled={!equipped && meta.equipped.length >= meta.slots}
+                      onClick={() => onToggleEquip(g.key)}
+                    >
+                      {equipped ? 'equipped ✓' : 'equip'}
+                    </button>
+                  )}
+                  {cost !== null ? (
+                    <button disabled={meta.ash < cost} onClick={() => onBuyGene(g.key)}>
+                      {level === 0 ? 'buy' : 'upgrade'} · ⬡ {cost}
+                    </button>
+                  ) : (
+                    <button disabled>maxed</button>
+                  )}
+                </div>
               </div>
             )
           })}

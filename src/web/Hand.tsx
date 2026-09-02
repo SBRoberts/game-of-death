@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { patternById, rotate, type Duel } from '../sim'
+import { rotate, type Duel } from '../sim'
 import { COLORS } from './render'
 
 interface HandProps {
@@ -36,7 +36,7 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
   return (
     <div className="hand">
       {duel.hand.map((id, i) => {
-        const p = patternById(id)
+        const p = duel.patternFor(1, id)
         const cells = rotate(p.cells, selected === i ? rotation : 0)
         const w = Math.max(...cells.map(([x]) => x)) + 1
         const h = Math.max(...cells.map(([, y]) => y)) + 1

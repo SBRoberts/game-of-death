@@ -1,86 +1,131 @@
 /**
- * The genome. Genes are one-axis data tuples (design law: data, not code):
- *   rule genes — mutate your faction's B/S digits or one tuning number
- *   card genes — add a special uni-cell to your draw pool
+ * The genome. Genes are ladders of one-axis data tuples — each LEVEL changes
+ * exactly one number along the gene's axis, so upgrades stay bisectable and
+ * the balance sweep can test every rung:
+ *   rule genes — mutate your faction's B/S digits or one economy number
+ *   card genes — add (and upgrade) a special uni-cell in your draw pool
  * Slots cap how many you equip; the loadout IS your build.
  */
+
+import { MARTYR_GREAT, VAMPIRE_SWIFT, VAMPIRE_ELDEST } from './celltypes'
+
+export interface GeneLevel {
+  ashCost: number
+  desc: string
+  /** Digits added to the owning faction's survive mask (absolute per level). */
+  addSurvive?: number[]
+  /** Digits added to the owning faction's birth mask (absolute per level). */
+  addBirth?: number[]
+  /** Placement radius override for the owning faction. */
+  radius?: number
+  /** Flat bonus to the owning faction's starting biomass. */
+  startBonus?: number
+  /** Special pattern id added to the owning faction's draw pool. */
+  card?: string
+  /** Card overrides at this level: biomass cost and/or cell-type variant. */
+  cardCost?: number
+  cardType?: number
+}
 
 export interface Gene {
   key: string
   name: string
   kind: 'rule' | 'card'
-  ashCost: number
-  desc: string
-  /** Digits added to the owning faction's survive mask. */
-  addSurvive?: number[]
-  /** Digits added to the owning faction's birth mask. */
-  addBirth?: number[]
-  /** Placement radius override — applies to the owning faction only. */
-  radius?: number
-  /** Income scale override — applies to the owning faction only. */
-  incomeScale?: number
-  /** Flat bonus to the owning faction's starting biomass. */
-  startBonus?: number
-  /** Special pattern id added to the owning faction's draw pool. */
-  card?: string
+  levels: GeneLevel[]
 }
+
+/** A loadout entry; bare strings mean level 1. */
+export type GeneChoice = string | { key: string; level: number }
+
+export const normalizeChoice = (c: GeneChoice): { key: string; level: number } =>
+  typeof c === 'string' ? { key: c, level: 1 } : c
 
 export const GENES: readonly Gene[] = [
   {
     key: 'hardy',
     name: 'Hardy',
     kind: 'rule',
-    ashCost: 30,
-    desc: 'Core strength — your cells survive even fully surrounded (8 neighbors).',
-    addSurvive: [8],
+    levels: [
+      { ashCost: 30, desc: 'Core strength — your cells survive fully surrounded (8).', addSurvive: [8] },
+      { ashCost: 45, desc: 'Your cells survive dense crowds (7–8 neighbors).', addSurvive: [7, 8] },
+      { ashCost: 70, desc: 'Your cells thrive in the crush (6–8 neighbors).', addSurvive: [6, 7, 8] },
+    ],
   },
   {
     key: 'highlife',
     name: 'HighLife',
     kind: 'rule',
-    ashCost: 40,
-    desc: 'Replicator blood — your births also trigger on 6 neighbors.',
-    addBirth: [6],
+    levels: [
+      { ashCost: 40, desc: 'Replicator blood — your births also trigger on 6.', addBirth: [6] },
+      { ashCost: 55, desc: 'Births trigger on 6 or 8 neighbors.', addBirth: [6, 8] },
+      { ashCost: 85, desc: 'Births trigger on any of 6, 7, 8.', addBirth: [6, 7, 8] },
+    ],
   },
   {
     key: 'ranger',
     name: 'Ranger',
     kind: 'rule',
-    ashCost: 30,
-    desc: 'Longer seed reach — place patterns up to 14 cells from your colony.',
-    radius: 14,
+    levels: [
+      { ashCost: 30, desc: 'Seed reach 12 cells from your colony.', radius: 12 },
+      { ashCost: 40, desc: 'Seed reach 14 cells.', radius: 14 },
+      { ashCost: 55, desc: 'Seed reach 18 cells — strike deep.', radius: 18 },
+    ],
   },
   {
     key: 'thrifty',
     name: 'Thrifty',
     kind: 'rule',
-    ashCost: 35,
-    desc: 'Deep reserves — begin each round with +24 biomass. A head start, not an engine.',
-    startBonus: 24,
+    levels: [
+      { ashCost: 35, desc: 'Deep reserves — begin each round with +12 biomass.', startBonus: 12 },
+      { ashCost: 45, desc: 'Begin each round with +24 biomass.', startBonus: 24 },
+      { ashCost: 60, desc: 'Begin each round with +40 biomass.', startBonus: 40 },
+    ],
   },
   {
     key: 'elder',
     name: 'Elder',
     kind: 'card',
-    ashCost: 60,
-    desc: 'Unlock the Elder card: a single immortal anchor cell.',
-    card: 'elder',
+    levels: [
+      { ashCost: 60, desc: 'Unlock the Elder: a single immortal anchor cell (⬢28).', card: 'elder' },
+      { ashCost: 50, desc: 'Elders root cheaper (⬢23).', card: 'elder', cardCost: 23 },
+      { ashCost: 70, desc: 'Elders root cheap enough to garden with (⬢18).', card: 'elder', cardCost: 18 },
+    ],
   },
   {
     key: 'vampire',
     name: 'Vampire',
     kind: 'card',
-    ashCost: 75,
-    desc: 'Unlock the Vampire card: converts an adjacent enemy every generation.',
-    card: 'vampire',
+    levels: [
+      { ashCost: 75, desc: 'Unlock the Vampire: converts an enemy every 3rd generation.', card: 'vampire' },
+      {
+        ashCost: 60,
+        desc: 'Vampire II feeds every other generation.',
+        card: 'vampire',
+        cardType: VAMPIRE_SWIFT,
+      },
+      {
+        ashCost: 90,
+        desc: 'Vampire III feeds every generation.',
+        card: 'vampire',
+        cardType: VAMPIRE_ELDEST,
+      },
+    ],
   },
   {
     key: 'martyr',
     name: 'Martyr',
     kind: 'card',
-    ashCost: 45,
-    desc: 'Unlock the Martyr card: detonates on death, killing adjacent enemies.',
-    card: 'martyr',
+    levels: [
+      { ashCost: 45, desc: 'Unlock the Martyr: detonates on death (⬢10).', card: 'martyr' },
+      { ashCost: 40, desc: 'Martyrs seed cheaper (⬢7) — lay minefields.', card: 'martyr', cardCost: 7 },
+      {
+        ashCost: 55,
+        desc: 'Martyr III detonates in a 5×5 blast.',
+        card: 'martyr',
+        cardCost: 7,
+        cardType: MARTYR_GREAT,
+      },
+    ],
   },
 ]
 
@@ -89,6 +134,8 @@ export const geneByKey = (key: string): Gene => {
   if (!g) throw new Error(`unknown gene: ${key}`)
   return g
 }
+
+export const maxLevel = (key: string): number => geneByKey(key).levels.length
 
 /** Ash price of the next genome slot; index = slots already owned (cap 5). */
 export const SLOT_COSTS = [40, 70, 110, 160, 220]

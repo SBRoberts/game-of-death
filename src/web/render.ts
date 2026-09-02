@@ -182,6 +182,67 @@ function drawPuncta(
   ctx.globalAlpha = 1
 }
 
+// ── the momentum frame ─────────────────────────────────────────────────────
+// The board's border IS the territory gauge: your green grows outward from
+// the center of the left edge, the rival's red from the center of the right,
+// and the Free Radicals hold the slate seams where the fronts would meet.
+// Fractions ease toward their targets so momentum swings read as motion.
+let shownYou = 0.33
+let shownRival = 0.33
+
+function drawMomentumFrame(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  you: number,
+  radicals: number,
+  rival: number,
+): void {
+  const total = you + radicals + rival
+  if (total <= 0) return
+  shownYou += (you / total - shownYou) * 0.06
+  shownRival += (rival / total - shownRival) * 0.06
+
+  const P = 2 * (W + H)
+  const inset = 1.5
+  // Clockwise arc-length param, t=0 at the left edge's center, heading up.
+  const corners = [H / 2, H / 2 + W, H / 2 + W + H, H / 2 + 2 * W + H]
+  const pointAt = (t: number): [number, number] => {
+    t = ((t % P) + P) % P
+    if (t < corners[0]) return [inset, H / 2 - t]
+    if (t < corners[1]) return [t - corners[0], inset]
+    if (t < corners[2]) return [W - inset, t - corners[1]]
+    if (t < corners[3]) return [W - (t - corners[2]), H - inset]
+    return [inset, H - (t - corners[3])]
+  }
+  const strokeArc = (t0: number, t1: number, color: string, width: number, alpha: number) => {
+    if (t1 - t0 < 1) return
+    ctx.strokeStyle = color
+    ctx.lineWidth = width
+    ctx.globalAlpha = alpha
+    ctx.beginPath()
+    ctx.moveTo(...pointAt(t0))
+    for (const c of corners.flatMap((c) => [c - P, c, c + P]).sort((a, b) => a - b)) {
+      if (c > t0 && c < t1) ctx.lineTo(...pointAt(c))
+    }
+    ctx.lineTo(...pointAt(t1))
+    ctx.stroke()
+    ctx.globalAlpha = 1
+  }
+
+  const gh = (shownYou * P) / 2 // green half-length, origin left-center (t=0)
+  const rh = (shownRival * P) / 2 // red half-length, origin right-center (t=W+H)
+  const RC = W + H
+  const draw = (width: number, alpha: number) => {
+    strokeArc(gh, RC - rh, 'rgba(140,155,180,0.55)', width, alpha * 0.6) // slate seam, top
+    strokeArc(RC + rh, P - gh, 'rgba(140,155,180,0.55)', width, alpha * 0.6) // slate seam, bottom
+    strokeArc(-gh, gh, COLORS.player, width, alpha)
+    strokeArc(RC - rh, RC + rh, COLORS.rival, width, alpha)
+  }
+  draw(7, 0.14) // soft glow pass
+  draw(3, 0.95) // crisp pass
+}
+
 export function render(
   ctx: CanvasRenderingContext2D,
   duel: Duel,
@@ -395,6 +456,9 @@ export function render(
   }
   ctx.fillStyle = vignette
   ctx.fillRect(0, 0, W, H)
+
+  // The frame gauge draws over the glass so it always reads.
+  drawMomentumFrame(ctx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL])
 
   // Cursor-side placement evaluation: the verdict lives where you're aiming.
   if (fx.hint && ghost) {

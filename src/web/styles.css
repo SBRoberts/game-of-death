@@ -145,32 +145,16 @@ button:active {
   animation: stat-bump 260ms ease-out;
 }
 
-.popbar {
+.subbar {
   display: flex;
-  width: min(1024px, 92vw);
-  height: 4px;
-  border-radius: 2px;
-  overflow: hidden;
-  background: #10141d;
+  align-items: baseline;
+  gap: 16px;
+  width: min(1024px, 96vw);
+  font-size: 12px;
 }
 
-.popbar span {
-  transition: width 400ms ease;
-}
-
-.pop-you {
-  background: var(--you);
-  opacity: 0.85;
-}
-
-.pop-radicals {
-  background: var(--dapi);
-  opacity: 0.45;
-}
-
-.pop-rival {
-  background: var(--rival);
-  opacity: 0.85;
+.subbar-spacer {
+  flex: 1;
 }
 
 .board-wrap {
@@ -179,8 +163,7 @@ button:active {
 }
 
 .board-wrap.planning canvas {
-  border-color: rgba(66, 245, 155, 0.45);
-  box-shadow: 0 0 18px rgba(66, 245, 155, 0.08);
+  box-shadow: 0 0 22px rgba(66, 245, 155, 0.1);
 }
 
 .coach {
@@ -252,14 +235,13 @@ button:active {
 }
 
 canvas {
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: crosshair;
   image-rendering: pixelated;
   width: auto;
   height: auto;
-  max-width: min(1024px, 94vw);
-  max-height: calc(100vh - 318px);
+  max-width: min(1024px, 96vw);
+  max-height: calc(100vh - 252px);
 }
 
 .impact-readout {

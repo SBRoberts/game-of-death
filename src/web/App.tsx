@@ -492,25 +492,9 @@ export function App() {
     <div className="app">
       <header className="hud">
         <h1>THE GAME OF DEATH</h1>
-        <div className="hud-stats">
-          <span className="stat round">
-            round {round}/{ROUNDS.length} · {ROUNDS[round - 1].label}
-          </span>
-          <span className="stat">gen {hud?.gen ?? 0}</span>
-          <span className="stat biomass">
-            ⬢ {hud?.biomass ?? 0} <em>+{hud?.rate ?? '0.0'}/s</em>
-          </span>
-          <span className="stat you">you {hud?.playerPop ?? 0}</span>
-          <span className="stat rival">rival {hud?.rivalPop ?? 0}</span>
-          <span className="stat radicals">radicals {hud?.radicalsPop ?? 0}</span>
-          <span className="stat kills" key={`k${hud?.destroyed ?? 0}`}>
-            ☠ {(hud?.destroyed ?? 0).toLocaleString()}
-          </span>
-          <span className="stat captures" key={`c${hud?.captured ?? 0}`}>
-            ◈ {hud?.captured ?? 0}
-          </span>
-          <span className="stat storm">{stormLabel}</span>
-        </div>
+        <span className="stat biomass">
+          ⬢ {hud?.biomass ?? 0} <em>+{hud?.rate ?? '0.0'}/s</em>
+        </span>
         <div className="hud-controls">
           {SPEED_LABELS.map((label, i) => (
             <button
@@ -547,17 +531,19 @@ export function App() {
         </div>
       </header>
 
-      <div className="popbar" title="territory: you vs the free radicals vs rival">
-        {(() => {
-          const total = (hud?.playerPop ?? 1) + (hud?.rivalPop ?? 1) + (hud?.radicalsPop ?? 0) || 1
-          return (
-            <>
-              <span className="pop-you" style={{ width: `${((hud?.playerPop ?? 0) / total) * 100}%` }} />
-              <span className="pop-radicals" style={{ width: `${((hud?.radicalsPop ?? 0) / total) * 100}%` }} />
-              <span className="pop-rival" style={{ width: `${((hud?.rivalPop ?? 0) / total) * 100}%` }} />
-            </>
-          )
-        })()}
+      <div className="subbar" title="the board's frame is the territory gauge: green you, red rival, slate radicals">
+        <span className="stat round">
+          round {round}/{ROUNDS.length} · {ROUNDS[round - 1].label}
+        </span>
+        <span className="stat">gen {hud?.gen ?? 0}</span>
+        <span className="stat storm">{stormLabel}</span>
+        <span className="subbar-spacer" />
+        <span className="stat kills" key={`k${hud?.destroyed ?? 0}`}>
+          ☠ {(hud?.destroyed ?? 0).toLocaleString()}
+        </span>
+        <span className="stat captures" key={`c${hud?.captured ?? 0}`}>
+          ◈ {hud?.captured ?? 0}
+        </span>
       </div>
 
       <div className={`board-wrap ${shake} ${speedIdx === 0 ? 'planning' : ''}`}>

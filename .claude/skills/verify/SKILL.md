@@ -26,8 +26,12 @@ Key selectors / inputs:
 
 - Load `http://localhost:5173/?seed=<fixed>` for reproducible runs; press
   `Space` immediately to pause for stable inspection.
-- HUD text: `.hud-stats .stat` (gen), `.stat.biomass`, `.stat.you`,
-  `.stat.rival`, `.stat.storm`, `.overlay` (null while running), `.help .seed`.
+- Top bar holds only biomass + controls; round/gen/storm/tickers live in
+  `.subbar` (`.stat.round`, `.stat.storm`, `.stat.kills`). Populations have
+  no numeric readout — the canvas border IS the territory gauge (green from
+  left-center, red from right-center, slate seams for the radicals).
+- Other selectors: `.stat.biomass`, `.overlay` (null while running),
+  `.help .seed`, `.newrun` (arms to "abandon run?" mid-run).
 - Cards: `.hand .card` (click to select). Board: click the `<canvas>` at
   fractional coordinates via its bounding box — the player colony sits around
   (0.22w, 0.5h), rival (0.78w, 0.5h).

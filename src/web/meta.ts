@@ -31,7 +31,7 @@ export function loadMeta(): MetaState {
     levels: {},
     equipped: [],
     seedsOwned: [...STARTER_SEEDS],
-    seedSel: 'soup',
+    seedSel: 'seedling',
     challenges: [],
   })
   try {
@@ -41,9 +41,13 @@ export function loadMeta(): MetaState {
       // v1 migration: an `owned` array becomes level-1 entries.
       const levels: Record<string, number> = { ...(m.levels ?? {}) }
       if (Array.isArray(m.owned)) for (const k of m.owned) levels[k] ??= 1
-      // v2→v3 migration: seeds/challenges default to the starter set.
-      const seedsOwned = Array.from(new Set([...STARTER_SEEDS, ...(m.seedsOwned ?? [])]))
-      const seedSel = seedsOwned.includes(m.seedSel ?? '') ? m.seedSel! : 'soup'
+      // v2→v3 migration: seeds/challenges default to the starter set; keep
+      // only ids that still exist in the catalog.
+      const valid = new Set(SEEDS.map((s) => s.id))
+      const seedsOwned = Array.from(
+        new Set([...STARTER_SEEDS, ...(m.seedsOwned ?? []).filter((id) => valid.has(id))]),
+      )
+      const seedSel = seedsOwned.includes(m.seedSel ?? '') ? m.seedSel! : 'seedling'
       return {
         ash: m.ash! | 0,
         slots: Math.min(m.slots! | 0, SLOT_COSTS.length),

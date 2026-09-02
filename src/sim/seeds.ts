@@ -1,12 +1,12 @@
 /**
- * Seeds — the starting formation of your colony, a progression axis of its
- * own. The default is the classic random soup; unlockable seeds are famous
- * Life patterns (oscillators, a generator, a methuselah). Challenge seeds are
- * deliberately fragile — clear a round from one and it pays a bounty.
+ * Seeds — the starting cluster your colony grows from, in the Conway sense.
+ * You begin with a small seed and unlock bigger, better, and harder ones: a
+ * denser founding soup, stable oscillators, a glider generator, chaotic
+ * methuselahs, and fragile challenge seeds that pay a bounty when cleared.
  *
- * Coordinates are relative to the pattern's own origin; the Duel centers them
- * on the colony's start point. Everything here is data — pure and
- * deterministic, no RNG.
+ * A seed is either a procedural soup (a random disc of a given radius/density)
+ * or a fixed formation (explicit cells). Everything here is data — pure and
+ * deterministic, no RNG of its own; the Duel supplies the seeded stream.
  */
 
 export type SeedCategory = 'soup' | 'oscillator' | 'generator' | 'methuselah' | 'challenge'
@@ -18,8 +18,10 @@ export interface Seed {
   blurb: string
   /** Ash to unlock; 0 = owned from the start. */
   ashCost: number
-  /** null = the procedural soup (the classic start). Else explicit cells. */
-  cells: ReadonlyArray<readonly [number, number]> | null
+  /** A random disc (radius in cells, density 0..1) — a "soup" seed. */
+  soup?: { radius: number; density: number }
+  /** A fixed formation, relative to its own origin. */
+  cells?: ReadonlyArray<readonly [number, number]>
   /** Present on challenge seeds: what it asks and what winning pays. */
   challenge?: { desc: string; rewardAsh: number }
 }
@@ -39,10 +41,7 @@ function fromAscii(art: string): Array<[number, number]> {
 /** The pulsar (period-3): four symmetric tri-bar arms on a 13×13 field. */
 function pulsar(): Array<[number, number]> {
   const cells: Array<[number, number]> = []
-  const bars = [
-    [2, 3, 4],
-    [8, 9, 10],
-  ].flat()
+  const bars = [2, 3, 4, 8, 9, 10]
   for (const r of [0, 5, 7, 12]) for (const c of bars) cells.push([c, r])
   for (const c of [0, 5, 7, 12]) for (const r of bars) cells.push([c, r])
   return cells
@@ -59,27 +58,27 @@ const GOSPER: Array<[number, number]> = [
 
 export const SEEDS: readonly Seed[] = [
   {
-    id: 'soup',
-    name: 'Primordial Soup',
+    id: 'seedling',
+    name: 'Seedling',
     category: 'soup',
-    blurb: 'The classic start — a dense, chaotic disc. Populous and unpredictable.',
+    blurb: 'Your first seed — a small cluster of cells. Everything grows from here.',
     ashCost: 0,
-    cells: null,
+    soup: { radius: 4, density: 0.5 },
   },
   {
     id: 'pulsar',
     name: 'Pulsar',
     category: 'oscillator',
-    blurb: 'A period-3 beacon — large, symmetric, and utterly stable. It holds its ground.',
-    ashCost: 45,
+    blurb: 'A period-3 beacon — symmetric and utterly stable. Trades raw numbers for permanence.',
+    ashCost: 50,
     cells: pulsar(),
   },
   {
     id: 'pentadecathlon',
     name: 'Pentadecathlon',
     category: 'oscillator',
-    blurb: 'Period-15 — a long, slow pulse that keeps stirring births around it.',
-    ashCost: 65,
+    blurb: 'Period-15 — a long, slow pulse that keeps stirring fresh births around it.',
+    ashCost: 70,
     cells: fromAscii(`
 ..O....O..
 OO.OOOO.OO
@@ -87,11 +86,20 @@ OO.OOOO.OO
 `),
   },
   {
+    id: 'soup',
+    name: 'Primordial Soup',
+    category: 'soup',
+    blurb: 'The dense classic — a broad, chaotic founding mass. Bigger and messier than the Seedling.',
+    ashCost: 90,
+    // No explicit params: this is the tuning-default soup, so a no-arg duel
+    // (harness/tests) stays byte-identical and honors any tuning overrides.
+  },
+  {
     id: 'acorn',
     name: 'Acorn',
     category: 'methuselah',
-    blurb: 'Seven cells that erupt for thousands of generations before they settle. A slow bomb you live inside.',
-    ashCost: 60,
+    blurb: 'Seven cells that erupt for thousands of generations before they settle. Explosive, hard to steer.',
+    ashCost: 70,
     cells: fromAscii(`
 .O.....
 ...O...

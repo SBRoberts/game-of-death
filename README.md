@@ -54,12 +54,15 @@ pays ash either way.
 
 ## Seeds (starting formation)
 
-Before genes, you choose a **seed** — the formation your colony starts as, a
-progression axis of its own (`seeds.ts`). The default is the classic random
-soup; ash unlocks famous Life patterns as starts: the **Pulsar** and
-**Pentadecathlon** (stable oscillators), the **Acorn** (a methuselah that
-erupts for thousands of generations), and the **Gosper Gun** (a generator that
-fires a glider every 30 generations, forever). **Challenge seeds** like the
+You begin with a small **seed** — the cluster your colony grows from, in the
+Conway sense — and unlock bigger, better, and harder ones (`seeds.ts`). The
+free starter is the **Seedling**, a small soup; the round-1 rival is seeded to
+match it, so the opening is a fair small fight. Ash then unlocks a progression:
+the **Pulsar** and **Pentadecathlon** (stable oscillators — permanence over raw
+numbers), the **Primordial Soup** (the big, dense classic), the **Acorn** (a
+chaotic methuselah), and the **Gosper Gun** (a generator that fires a glider
+every 30 generations, forever). Because later rounds field bigger rival seeds,
+unlocking a better seed is how you keep pace. **Challenge seeds** like the
 **Diehard** — which would vanish in 130 generations of pure Life — are owned
 from the start and pay a one-time ash bounty the first time you clear a round
 from one. Chosen in the genome; applied on your next run; deterministic per

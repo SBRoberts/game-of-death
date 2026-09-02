@@ -44,8 +44,9 @@ export class Duel {
   private drawRng: Rng
   private rivalRng: Rng
 
-  /** The player's chosen starting formation (see seeds.ts). */
+  /** The player's and rival's chosen starting formations (see seeds.ts). */
   readonly colonySeed: string
+  readonly rivalSeed: string
 
   constructor(
     seed: string,
@@ -53,10 +54,12 @@ export class Duel {
     loadout: readonly GeneChoice[] = [],
     rivalLoadout: readonly GeneChoice[] = [],
     colonySeed = 'soup',
+    rivalSeed = 'soup',
   ) {
     this.seed = seed
     this.loadout = loadout
     this.colonySeed = colonySeed
+    this.rivalSeed = rivalSeed
 
     // A faction's genes build its rule, pool, and economy — all owned by that
     // faction alone. Each gene applies at its chosen level; card genes may
@@ -122,7 +125,7 @@ export class Duel {
 
     const soupRng = rngFrom(seed, 'soup')
     this.seedColony(PLAYER, Math.floor(this.t.width * 0.22), Math.floor(this.t.height / 2), soupRng, colonySeed)
-    this.seedColony(RIVAL, Math.floor(this.t.width * 0.78), Math.floor(this.t.height / 2), soupRng)
+    this.seedColony(RIVAL, Math.floor(this.t.width * 0.78), Math.floor(this.t.height / 2), soupRng, rivalSeed)
     this.seedRadicals(rngFrom(seed, 'radicals'))
 
     this.hand = Array.from({ length: this.t.handSize }, () => this.draw())
@@ -152,10 +155,11 @@ export class Duel {
     }
   }
 
-  private seedColony(faction: number, cx: number, cy: number, rng: Rng, colonySeed = 'soup'): void {
-    const pattern = colonySeed === 'soup' ? null : seedById(colonySeed).cells
-    if (pattern) {
+  private seedColony(faction: number, cx: number, cy: number, rng: Rng, seedId = 'soup'): void {
+    const seed = seedById(seedId)
+    if (seed.cells) {
       // Stamp the chosen formation centered on the colony origin.
+      const pattern = seed.cells
       const w = Math.max(...pattern.map(([x]) => x)) + 1
       const h = Math.max(...pattern.map(([, y]) => y)) + 1
       const ox = cx - Math.floor(w / 2)
@@ -167,12 +171,15 @@ export class Duel {
       )
       return
     }
-    const r = this.t.seedBlobRadius
+    // A soup seed: a random disc. Default params match the tuning so a no-arg
+    // duel is byte-identical to before (harness/proofs unaffected).
+    const r = seed.soup?.radius ?? this.t.seedBlobRadius
+    const density = seed.soup?.density ?? this.t.seedDensity
     const coords: Array<[number, number]> = []
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy > r * r) continue
-        if (rng() < this.t.seedDensity) coords.push([cx + dx, cy + dy])
+        if (rng() < density) coords.push([cx + dx, cy + dy])
       }
     }
     setCells(this.state, faction, coords)

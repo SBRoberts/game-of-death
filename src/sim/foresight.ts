@@ -1,7 +1,7 @@
 /**
  * Foresight: the causal impact of a hypothetical placement. Runs two cloned
  * futures — with and without the placed cells — and diffs them N generations
- * out. Cells the placement wins are "gained"; enemy/wild cells it disrupts
+ * out. Cells the placement wins are "gained"; enemy/radical cells it disrupts
  * are "destroyed". This is what makes an option legible before you pay for it.
  */
 

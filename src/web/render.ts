@@ -1,11 +1,11 @@
 /**
  * Canvas renderer — fluorescence microscopy treatment. Factions are
  * fluorophores on a dark slide: GFP-green player, mCherry-red rival, faint
- * DAPI-blue wilds. Cells are round glowing puncta with a cheap two-pass
+ * DAPI-blue free radicals. Cells are round glowing puncta with a cheap two-pass
  * bloom; grain and a vignette sell the glass. The board is never React.
  */
 
-import { ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, WILDS, type Duel } from '../sim'
+import { ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, RADICALS, type Duel } from '../sim'
 import type { Impact } from '../sim'
 
 export const CELL = 8
@@ -14,7 +14,7 @@ export const COLORS = {
   bg: '#04060b',
   player: '#42f59b', // GFP
   rival: '#ff5340', // mCherry
-  wilds: '#5f7dff', // DAPI
+  radicals: '#5f7dff', // DAPI
   vampire: '#c46bff', // far-red
   elder: '#eafcff',
   martyr: '#ffd84a', // YFP
@@ -31,13 +31,13 @@ export const COLORS = {
 const FACTION_FILL: Record<number, string> = {
   [PLAYER]: COLORS.player,
   [RIVAL]: COLORS.rival,
-  [WILDS]: COLORS.wilds,
+  [RADICALS]: COLORS.radicals,
 }
 
 const BLOOM_RGB: Record<number, [number, number, number]> = {
   [PLAYER]: [66, 245, 155],
   [RIVAL]: [255, 83, 64],
-  [WILDS]: [95, 125, 255],
+  [RADICALS]: [95, 125, 255],
 }
 
 export interface Ghost {
@@ -119,7 +119,7 @@ function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, 
   for (let i = 0; i < cells.length; i++) {
     const f = cells[i]
     if (f > 0) {
-      const rgb = BLOOM_RGB[f] ?? BLOOM_RGB[WILDS]
+      const rgb = BLOOM_RGB[f] ?? BLOOM_RGB[RADICALS]
       const o = i * 4
       px[o] = rgb[0]
       px[o + 1] = rgb[1]
@@ -208,7 +208,7 @@ export function render(
     }
   }
 
-  drawPuncta(ctx, s, w, WILDS, COLORS.wilds, 0.8)
+  drawPuncta(ctx, s, w, RADICALS, COLORS.radicals, 0.8)
   drawPuncta(ctx, s, w, RIVAL, COLORS.rival, 1)
   drawPuncta(ctx, s, w, PLAYER, COLORS.player, 1)
 

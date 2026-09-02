@@ -10,15 +10,17 @@ edges of the universe.
 
 ## How it plays
 
-Two colonies of B3/S23 life share one board with a neutral **wilds** debris
-field between them — cover, obstacles, and capturable matter. On top of
-Conway's rules sit three faction interactions:
+Two colonies of B3/S23 life share one board with the **Free Radicals**
+between them — an unaligned third faction of unstable debris holding the
+midfield. They answer to no one, they get in the way of your shots, and they
+join whoever flanks them hardest: cover, obstacles, and recruits, all at
+once. On top of Conway's rules sit three faction interactions:
 
 - **Recruitment** — a newborn cell joins the strictly dominant neighboring
   faction (ties abort the birth).
 - **Flanking** — a live cell whose enemy neighbors outnumber its friends by 2+
   defects on the spot. Overwhelming force assimilates — this is also how you
-  capture wilds.
+  recruit the Free Radicals to your cause.
 - **Casualties** — outnumbered by just 1, the cell dies instead. Skirmish
   fronts bleed and churn rather than feeding the winner.
 
@@ -138,6 +140,15 @@ only if: boards grow past ~500×500, per-cell rule fields land, or sweep
 confidence needs another order of magnitude. The port stays mechanical:
 `engine.ts` is ~250 stable lines with 27 ground-truth tests and exact
 determinism hashes to verify any reimplementation against.
+
+**Mobile & offline** (orthogonal to the language question): the game is a
+PWA — every asset is local and precached by a service worker, so it is
+fully playable offline and installable to a phone's home screen from the
+browser. For app-store distribution, Capacitor wraps this exact build in a
+native shell with no code changes. Rust/WASM would still run inside the
+same WebView on mobile — it buys nothing on this axis; only a from-scratch
+native renderer (e.g. Bevy) would, and the pure sim core keeps that door
+open too.
 
 ## Design laws
 

@@ -4,7 +4,7 @@ import {
   PLAYER,
   RIVAL,
   ROUNDS,
-  WILDS,
+  RADICALS,
   TUNING,
   impactScore,
   patternById,
@@ -67,7 +67,7 @@ interface Hud {
   rate: string
   playerPop: number
   rivalPop: number
-  wildsPop: number
+  radicalsPop: number
   destroyed: number
   captured: number
   inset: number
@@ -103,6 +103,7 @@ export function App() {
   const [ashEarned, setAshEarned] = useState<number | null>(null)
   const metaRef = useRef(meta)
   metaRef.current = meta
+  const duelRef = useRef<Duel | null>(null)
   const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), [])
   // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
   const duel = useMemo(() => {
@@ -114,6 +115,7 @@ export function App() {
       r.rivalLoadout,
     )
   }, [seed, run, round])
+  duelRef.current = duel
 
   const [speedIdx, setSpeedIdx] = useState(1)
   const [selected, setSelected] = useState<number | null>(null)
@@ -155,6 +157,23 @@ export function App() {
     setShowGenome(false)
     flashesRef.current = []
   }, [])
+
+  // Abandoning a live run requires a second click within 3 seconds.
+  const [armAbandon, setArmAbandon] = useState(false)
+  const armTimer = useRef(0)
+  const requestNewRun = useCallback(() => {
+    const running = duelRef.current?.status === 'running'
+    if (!running || armAbandon) {
+      window.clearTimeout(armTimer.current)
+      setArmAbandon(false)
+      newRun()
+      return
+    }
+    sfx.play('select')
+    setArmAbandon(true)
+    window.clearTimeout(armTimer.current)
+    armTimer.current = window.setTimeout(() => setArmAbandon(false), 3000)
+  }, [armAbandon, newRun])
 
   const nextRound = useCallback(() => {
     setRound((r) => Math.min(r + 1, ROUNDS.length))
@@ -301,12 +320,12 @@ export function App() {
         } else if (impact) {
           const cells = duel.state.cells
           let rivalHit = 0
-          let wildsTouched = 0
+          let radicalsTouched = 0
           for (const i of impact.destroyed) {
             if (cells[i] === RIVAL) rivalHit++
-            else if (cells[i] === WILDS) wildsTouched++
+            else if (cells[i] === RADICALS) radicalsTouched++
           }
-          for (const i of impact.gained) if (cells[i] === WILDS) wildsTouched++
+          for (const i of impact.gained) if (cells[i] === RADICALS) radicalsTouched++
           const score = impactScore(cells, impact, RIVAL, ghost.cost)
           const ratio = score / ghost.cost
           hintGrade = ratio < 0 ? 'poor' : ratio < 0.5 ? 'fair' : ratio < 1.5 ? 'good' : 'great'
@@ -316,7 +335,7 @@ export function App() {
               : impact.gained.length > 2
                 ? ' (burns out)'
                 : ''
-          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${wildsTouched} wilds`
+          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${radicalsTouched} radicals`
         }
       }
 
@@ -352,9 +371,9 @@ export function App() {
           rate: (duel.income(PLAYER) * SPEEDS[speedRef.current]).toFixed(1),
           playerPop: s.pops[PLAYER],
           rivalPop: s.pops[RIVAL],
-          wildsPop: s.pops[WILDS],
+          radicalsPop: s.pops[RADICALS],
           destroyed: sum.rivalDestroyed,
-          captured: sum.wildsCaptured + sum.rivalConverted,
+          captured: sum.radicalsClaimed + sum.rivalConverted,
           inset: s.ringInset,
           stormEta: Math.max(0, duel.t.ringGrace - s.gen),
           status: duel.status,
@@ -454,7 +473,7 @@ export function App() {
         togglePause()
       } else if (e.key >= '1' && e.key <= '4') setSpeedIdx(Number(e.key))
       else if (e.key === 'r' || e.key === 'R') setRotation((r) => (r + 1) % 4)
-      else if (e.key === 'n' || e.key === 'N') newRun()
+      else if (e.key === 'n' || e.key === 'N') requestNewRun()
       else if (e.key === 'q' || e.key === 'Q') selectCard(0)
       else if (e.key === 'w' || e.key === 'W') selectCard(1)
       else if (e.key === 'e' || e.key === 'E') selectCard(2)
@@ -464,7 +483,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePause, newRun, debug, duel, selectCard])
+  }, [togglePause, requestNewRun, debug, duel, selectCard])
 
   const stormLabel =
     hud === null ? '' : hud.inset > 0 ? `storm +${hud.inset}` : `storm in ${hud.stormEta}g`
@@ -483,7 +502,7 @@ export function App() {
           </span>
           <span className="stat you">you {hud?.playerPop ?? 0}</span>
           <span className="stat rival">rival {hud?.rivalPop ?? 0}</span>
-          <span className="stat wilds">wilds {hud?.wildsPop ?? 0}</span>
+          <span className="stat radicals">radicals {hud?.radicalsPop ?? 0}</span>
           <span className="stat kills" key={`k${hud?.destroyed ?? 0}`}>
             ☠ {(hud?.destroyed ?? 0).toLocaleString()}
           </span>
@@ -502,8 +521,8 @@ export function App() {
               {label}
             </button>
           ))}
-          <button className="newrun" onClick={newRun}>
-            new run
+          <button className={`newrun ${armAbandon ? 'armed' : ''}`} onClick={requestNewRun}>
+            {armAbandon ? 'abandon run?' : 'new run'}
           </button>
           <button
             className="mute"
@@ -528,13 +547,13 @@ export function App() {
         </div>
       </header>
 
-      <div className="popbar" title="territory: you vs wilds vs rival">
+      <div className="popbar" title="territory: you vs the free radicals vs rival">
         {(() => {
-          const total = (hud?.playerPop ?? 1) + (hud?.rivalPop ?? 1) + (hud?.wildsPop ?? 0) || 1
+          const total = (hud?.playerPop ?? 1) + (hud?.rivalPop ?? 1) + (hud?.radicalsPop ?? 0) || 1
           return (
             <>
               <span className="pop-you" style={{ width: `${((hud?.playerPop ?? 0) / total) * 100}%` }} />
-              <span className="pop-wilds" style={{ width: `${((hud?.wildsPop ?? 0) / total) * 100}%` }} />
+              <span className="pop-radicals" style={{ width: `${((hud?.radicalsPop ?? 0) / total) * 100}%` }} />
               <span className="pop-rival" style={{ width: `${((hud?.rivalPop ?? 0) / total) * 100}%` }} />
             </>
           )
@@ -544,7 +563,7 @@ export function App() {
       <div className={`board-wrap ${shake} ${speedIdx === 0 ? 'planning' : ''}`}>
         <canvas
           ref={canvasRef}
-          style={{ width: duel.t.width * CELL, maxWidth: '100%', aspectRatio: `${duel.t.width} / ${duel.t.height}` }}
+          style={{ aspectRatio: `${duel.t.width} / ${duel.t.height}` }}
           onMouseMove={onMove}
           onMouseLeave={() => (hoverRef.current = null)}
           onClick={onClick}

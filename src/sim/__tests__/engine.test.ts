@@ -94,9 +94,9 @@ describe('engine: faction rules', () => {
     expect(s.cells[5 * 40 + 5]).toBe(0)
   })
 
-  it('wilds capture: neutral cells flanked by a colony defect to it', () => {
+  it('free-radical capture: neutral cells flanked by a colony defect to it', () => {
     const s = createState(cfg())
-    setCells(s, 2, [[10, 10]]) // one wild-stand-in cell
+    setCells(s, 2, [[10, 10]]) // one radical stand-in cell
     setCells(s, 1, [[9, 9], [10, 9], [11, 9]]) // colony pressing on it
     step(s)
     // (10,10): friendly 0, enemy 3 → flanked by ≥2 → joins faction 1
@@ -288,7 +288,7 @@ describe('duel: determinism', () => {
 describe('duel: launch clearance', () => {
   it('travelers need open ground; fortifications can sit snug', () => {
     // Solid colony disc at (28,40) radius 3 for deterministic geometry.
-    const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, wildsCount: 0 })
+    const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, radicalsCount: 0 })
     const glider = patternById('glider')
     const block = d.patternCells(patternById('block'), 33, 40, 0)
     expect(d.canPlace(1, block, 0)).toBe(true)
@@ -299,7 +299,7 @@ describe('duel: launch clearance', () => {
   })
 
   it('names the rejection reason', () => {
-    const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, wildsCount: 0 })
+    const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, radicalsCount: 0 })
     const glider = patternById('glider')
     const block = patternById('block')
     const onColony = d.patternCells(block, 27, 40, 0)

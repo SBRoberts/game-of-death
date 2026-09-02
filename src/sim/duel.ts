@@ -5,7 +5,7 @@
  */
 
 import { createState, setCells, step } from './engine'
-import { PATTERNS, WILD_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
+import { PATTERNS, RADICAL_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
 import { geneByKey, normalizeChoice, type GeneChoice } from './genes'
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
@@ -14,7 +14,7 @@ import { aiAct, smartAct } from './ai'
 
 export const PLAYER = 1
 export const RIVAL = 2
-export const WILDS = 3
+export const RADICALS = 3
 
 export type DuelStatus = 'running' | 'won' | 'lost'
 
@@ -100,7 +100,7 @@ export class Duel {
         { name: 'dead', rule: LIFE },
         { name: 'you', rule: playerRule },
         { name: 'rival', rule: rival.rule },
-        { name: 'wilds', rule: LIFE },
+        { name: 'free radicals', rule: LIFE },
       ],
       flankingMargin: this.t.flankingMargin,
       casualtyMargin: this.t.casualtyMargin,
@@ -117,16 +117,16 @@ export class Duel {
     const soupRng = rngFrom(seed, 'soup')
     this.seedColony(PLAYER, Math.floor(this.t.width * 0.22), Math.floor(this.t.height / 2), soupRng)
     this.seedColony(RIVAL, Math.floor(this.t.width * 0.78), Math.floor(this.t.height / 2), soupRng)
-    this.seedWilds(rngFrom(seed, 'wilds'))
+    this.seedRadicals(rngFrom(seed, 'radicals'))
 
     this.hand = Array.from({ length: this.t.handSize }, () => this.draw())
   }
 
   /** Neutral debris field in the midfield: cover, obstacles, capturable matter. */
-  private seedWilds(rng: Rng): void {
+  private seedRadicals(rng: Rng): void {
     const { width: w, height: h } = this.state.cfg
-    for (let i = 0; i < this.t.wildsCount; i++) {
-      const shape = WILD_SHAPES[pickInt(rng, WILD_SHAPES.length)]
+    for (let i = 0; i < this.t.radicalsCount; i++) {
+      const shape = RADICAL_SHAPES[pickInt(rng, RADICAL_SHAPES.length)]
       const cells = placeAt(
         rotate(shape, pickInt(rng, 4)),
         Math.floor(w * 0.34 + rng() * w * 0.32),
@@ -142,7 +142,7 @@ export class Duel {
         }
         return true
       })
-      if (clear) setCells(this.state, WILDS, cells)
+      if (clear) setCells(this.state, RADICALS, cells)
     }
   }
 
@@ -186,7 +186,7 @@ export class Duel {
       gens: this.state.gen,
       rivalDestroyed: this.state.deaths[RIVAL],
       playerLost: this.state.deaths[PLAYER],
-      wildsCaptured: this.state.converts[WILDS * nf + PLAYER],
+      radicalsClaimed: this.state.converts[RADICALS * nf + PLAYER],
       rivalConverted: this.state.converts[RIVAL * nf + PLAYER],
     }
   }

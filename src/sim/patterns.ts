@@ -57,7 +57,7 @@ export const PATTERNS: readonly Pattern[] = [
     name: 'Glider',
     cost: 7,
     role: 'strike',
-    tip: 'Launch from open ground at the rival — or claim wilds from afar. Aim with R.',
+    tip: 'Launch from open ground at the rival — or claim radicals from afar. Aim with R.',
     cells: [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]],
     clearance: 1,
     dir: [1, 1],
@@ -86,7 +86,7 @@ export const PATTERNS: readonly Pattern[] = [
     name: 'R-Pentomino',
     cost: 14,
     role: 'bomb',
-    tip: 'Drop far from home — behind enemy lines or into wilds. It erupts for a thousand generations.',
+    tip: 'Drop far from home — behind enemy lines or into the radicals. It erupts for a thousand generations.',
     cells: [[1, 0], [2, 0], [0, 1], [1, 1], [1, 2]],
     clearance: 1,
   },
@@ -130,7 +130,7 @@ export const SPECIAL_PATTERNS: readonly Pattern[] = [
 ]
 
 /** Neutral debris shapes scattered through the midfield (not cards). */
-export const WILD_SHAPES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
+export const RADICAL_SHAPES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
   [[0, 0], [1, 0], [0, 1], [1, 1]], // block
   [[1, 0], [2, 0], [0, 1], [3, 1], [1, 2], [2, 2]], // beehive
   [[0, 0], [1, 0], [2, 0]], // blinker

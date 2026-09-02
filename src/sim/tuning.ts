@@ -44,8 +44,8 @@ export const TUNING = {
   seedDensity: 0.45,
 
   // Neutral debris scattered through the midfield: obstacles, cover, and
-  // capturable matter (flank a wild cell and it defects to you).
-  wildsCount: 36,
+  // capturable matter (flank a radical and it defects to you).
+  radicalsCount: 36,
 
   // Throttle stops, generations per second (index 0 = paused). 1× is slow
   // enough to think at; the top stop is for riding out settled positions.

@@ -73,11 +73,11 @@ export function ashBreakdown(duel: Duel, runClear: boolean): { rows: AshRow[]; t
       value: Math.floor(s.rivalDestroyed / 2000),
     },
   ]
-  if (s.wildsCaptured > 0)
+  if (s.radicalsClaimed > 0)
     rows.push({
       label: 'capture',
-      detail: `${s.wildsCaptured} wilds claimed`,
-      value: Math.floor(s.wildsCaptured / 2),
+      detail: `${s.radicalsClaimed} radicals claimed`,
+      value: Math.floor(s.radicalsClaimed / 2),
     })
   if (s.rivalConverted > 0)
     rows.push({

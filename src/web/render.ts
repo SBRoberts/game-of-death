@@ -185,10 +185,129 @@ function drawPuncta(
 // ── the momentum frame ─────────────────────────────────────────────────────
 // The board's border IS the territory gauge: your green grows outward from
 // the center of the left edge, the rival's red from the center of the right,
-// and the Free Radicals hold the slate seams where the fronts would meet.
-// Fractions ease toward their targets so momentum swings read as motion.
+// and the Free Radicals hold shimmering seams where the fronts would meet.
+// The arcs flow around rounded corners, fade like fluorescence toward their
+// tips, and carry a glowing frontline node that flares while you're gaining.
+// At round end the frame finishes the story: all green, or all red.
 let shownYou = 0.33
 let shownRival = 0.33
+let heatYou = 0
+let heatRival = 0
+
+interface FrameSeg {
+  len: number
+  at: (d: number) => [number, number]
+}
+let frameSegs: FrameSeg[] | null = null
+let frameP = 0
+let frameKey = ''
+
+function buildFramePath(W: number, H: number): void {
+  const c = 2.5 // stroke centerline inset
+  const R = 12 // corner radius
+  const vh = H / 2 - c - R // half vertical straight
+  const hs = W - 2 * (c + R) // horizontal straight
+  const vs = H - 2 * (c + R) // full vertical straight
+  const q = (Math.PI * R) / 2
+  const arc = (cx: number, cy: number, a0: number): FrameSeg => ({
+    len: q,
+    at: (d) => {
+      const a = a0 + (d / q) * (Math.PI / 2)
+      return [cx + R * Math.cos(a), cy + R * Math.sin(a)]
+    },
+  })
+  // Clockwise from the left edge's center, heading up.
+  frameSegs = [
+    { len: vh, at: (d) => [c, H / 2 - d] },
+    arc(c + R, c + R, Math.PI), // top-left
+    { len: hs, at: (d) => [c + R + d, c] },
+    arc(W - c - R, c + R, -Math.PI / 2), // top-right
+    { len: vs, at: (d) => [W - c, c + R + d] },
+    arc(W - c - R, H - c - R, 0), // bottom-right
+    { len: hs, at: (d) => [W - c - R - d, H - c] },
+    arc(c + R, H - c - R, Math.PI / 2), // bottom-left
+    { len: vh, at: (d) => [c, H - c - R - d] },
+  ]
+  frameP = frameSegs.reduce((a, s) => a + s.len, 0)
+}
+
+function framePointAt(t: number): [number, number] {
+  const segs = frameSegs
+  if (!segs) return [0, 0]
+  t = ((t % frameP) + frameP) % frameP
+  for (const s of segs) {
+    if (t <= s.len) return s.at(t)
+    t -= s.len
+  }
+  return segs[segs.length - 1].at(segs[segs.length - 1].len)
+}
+
+/** One faction arc: chunked strokes with intensity falling off toward tips. */
+function drawFactionArc(
+  ctx: CanvasRenderingContext2D,
+  center: number,
+  half: number,
+  color: string,
+  heat: number,
+): void {
+  if (half < 2) return
+  const chunks = Math.max(6, Math.min(28, Math.floor(half / 12)))
+  for (let side = -1; side <= 1; side += 2) {
+    for (let k = 0; k < chunks; k++) {
+      const u0 = k / chunks
+      const u1 = (k + 1) / chunks
+      const fade = 1 - 0.55 * Math.pow((u0 + u1) / 2, 1.7)
+      const t0 = center + side * half * u0
+      const t1 = center + side * half * u1
+      // glow pass then crisp pass
+      ctx.strokeStyle = color
+      ctx.lineCap = 'round'
+      ctx.globalAlpha = 0.12 * fade
+      ctx.lineWidth = 7.5
+      strokePiece(ctx, t0, t1)
+      ctx.globalAlpha = 0.95 * fade
+      ctx.lineWidth = 3.2 - 1.1 * ((u0 + u1) / 2)
+      strokePiece(ctx, t0, t1)
+    }
+  }
+  ctx.globalAlpha = 1
+  // Frontline nodes at both tips: brighter and larger while gaining ground.
+  for (const side of [-1, 1]) {
+    const [x, y] = framePointAt(center + side * half)
+    const r = 2.4 + Math.min(2.2, heat)
+    const g = ctx.createRadialGradient(x, y, 0.5, x, y, r * 3)
+    g.addColorStop(0, color)
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalAlpha = 0.35 + Math.min(0.45, heat * 0.5)
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(x, y, r * 3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.fillStyle = '#eafcff'
+    ctx.beginPath()
+    ctx.arc(x, y, r * 0.55, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(x, y, r * 0.95, 0, Math.PI * 2)
+    ctx.globalAlpha = 0.7
+    ctx.fill()
+    ctx.globalAlpha = 1
+  }
+}
+
+function strokePiece(ctx: CanvasRenderingContext2D, t0: number, t1: number): void {
+  const lo = Math.min(t0, t1)
+  const hi = Math.max(t0, t1)
+  ctx.beginPath()
+  ctx.moveTo(...framePointAt(lo))
+  const steps = Math.max(1, Math.ceil((hi - lo) / 6))
+  for (let i = 1; i <= steps; i++) {
+    ctx.lineTo(...framePointAt(lo + ((hi - lo) * i) / steps))
+  }
+  ctx.stroke()
+}
 
 function drawMomentumFrame(
   ctx: CanvasRenderingContext2D,
@@ -197,50 +316,43 @@ function drawMomentumFrame(
   you: number,
   radicals: number,
   rival: number,
+  now: number,
+  status: 'running' | 'won' | 'lost',
 ): void {
+  const key = `${W}x${H}`
+  if (!frameSegs || frameKey !== key) {
+    buildFramePath(W, H)
+    frameKey = key
+  }
   const total = you + radicals + rival
-  if (total <= 0) return
-  shownYou += (you / total - shownYou) * 0.06
-  shownRival += (rival / total - shownRival) * 0.06
+  // At round end the frame completes the story; mid-run it tracks territory.
+  const targetYou = status === 'won' ? 1 : status === 'lost' ? 0 : total > 0 ? you / total : 0.33
+  const targetRival =
+    status === 'lost' ? 1 : status === 'won' ? 0 : total > 0 ? rival / total : 0.33
+  const ease = status === 'running' ? 0.06 : 0.1
+  heatYou = Math.max(0, heatYou * 0.94 + (targetYou - shownYou) * 26)
+  heatRival = Math.max(0, heatRival * 0.94 + (targetRival - shownRival) * 26)
+  shownYou += (targetYou - shownYou) * ease
+  shownRival += (targetRival - shownRival) * ease
 
-  const P = 2 * (W + H)
-  const inset = 1.5
-  // Clockwise arc-length param, t=0 at the left edge's center, heading up.
-  const corners = [H / 2, H / 2 + W, H / 2 + W + H, H / 2 + 2 * W + H]
-  const pointAt = (t: number): [number, number] => {
-    t = ((t % P) + P) % P
-    if (t < corners[0]) return [inset, H / 2 - t]
-    if (t < corners[1]) return [t - corners[0], inset]
-    if (t < corners[2]) return [W - inset, t - corners[1]]
-    if (t < corners[3]) return [W - (t - corners[2]), H - inset]
-    return [inset, H - (t - corners[3])]
-  }
-  const strokeArc = (t0: number, t1: number, color: string, width: number, alpha: number) => {
-    if (t1 - t0 < 1) return
-    ctx.strokeStyle = color
-    ctx.lineWidth = width
-    ctx.globalAlpha = alpha
-    ctx.beginPath()
-    ctx.moveTo(...pointAt(t0))
-    for (const c of corners.flatMap((c) => [c - P, c, c + P]).sort((a, b) => a - b)) {
-      if (c > t0 && c < t1) ctx.lineTo(...pointAt(c))
-    }
-    ctx.lineTo(...pointAt(t1))
-    ctx.stroke()
-    ctx.globalAlpha = 1
-  }
+  const P = frameP
+  const gh = (shownYou * P) / 2
+  const rh = (shownRival * P) / 2
+  const RC = P / 2 // right edge's center, by symmetry of the path
 
-  const gh = (shownYou * P) / 2 // green half-length, origin left-center (t=0)
-  const rh = (shownRival * P) / 2 // red half-length, origin right-center (t=W+H)
-  const RC = W + H
-  const draw = (width: number, alpha: number) => {
-    strokeArc(gh, RC - rh, 'rgba(140,155,180,0.55)', width, alpha * 0.6) // slate seam, top
-    strokeArc(RC + rh, P - gh, 'rgba(140,155,180,0.55)', width, alpha * 0.6) // slate seam, bottom
-    strokeArc(-gh, gh, COLORS.player, width, alpha)
-    strokeArc(RC - rh, RC + rh, COLORS.rival, width, alpha)
-  }
-  draw(7, 0.14) // soft glow pass
-  draw(3, 0.95) // crisp pass
+  // The Free Radical seams: unstable, drifting, DAPI-tinted.
+  ctx.save()
+  ctx.setLineDash([4, 6])
+  ctx.lineDashOffset = -(now / 90)
+  ctx.strokeStyle = 'rgba(95,125,255,0.5)'
+  ctx.lineWidth = 2
+  ctx.globalAlpha = 0.7
+  if (RC - rh - gh > 3) strokePiece(ctx, gh + 2, RC - rh - 2)
+  if (P - gh - (RC + rh) > 3) strokePiece(ctx, RC + rh + 2, P - gh - 2)
+  ctx.restore()
+
+  drawFactionArc(ctx, 0, gh, COLORS.player, heatYou)
+  drawFactionArc(ctx, RC, rh, COLORS.rival, heatRival)
 }
 
 export function render(
@@ -458,7 +570,7 @@ export function render(
   ctx.fillRect(0, 0, W, H)
 
   // The frame gauge draws over the glass so it always reads.
-  drawMomentumFrame(ctx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL])
+  drawMomentumFrame(ctx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL], fx.now, duel.status)
 
   // Cursor-side placement evaluation: the verdict lives where you're aiming.
   if (fx.hint && ghost) {

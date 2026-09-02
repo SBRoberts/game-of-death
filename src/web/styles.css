@@ -235,7 +235,7 @@ button:active {
 }
 
 canvas {
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: crosshair;
   image-rendering: pixelated;
   width: auto;

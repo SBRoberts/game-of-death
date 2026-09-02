@@ -47,7 +47,7 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
           </button>
         )
       })}
-      <div className="hand-note">seeds must land within {duel.t.placementRadius} cells of your colony</div>
+      <div className="hand-note">seeds must land within {duel.radii[1]} cells of your colony</div>
     </div>
   )
 }

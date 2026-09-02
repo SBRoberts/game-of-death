@@ -5,21 +5,23 @@
  * Slots cap how many you equip; the loadout IS your build.
  */
 
-import type { Tuning } from './tuning'
-
 export interface Gene {
   key: string
   name: string
   kind: 'rule' | 'card'
   ashCost: number
   desc: string
-  /** Digits added to the player faction's survive mask. */
+  /** Digits added to the owning faction's survive mask. */
   addSurvive?: number[]
-  /** Digits added to the player faction's birth mask. */
+  /** Digits added to the owning faction's birth mask. */
   addBirth?: number[]
-  /** One tuning number, replaced outright. */
-  tuning?: Partial<Tuning>
-  /** Special pattern id added to the player draw pool. */
+  /** Placement radius override — applies to the owning faction only. */
+  radius?: number
+  /** Income scale override — applies to the owning faction only. */
+  incomeScale?: number
+  /** Flat bonus to the owning faction's starting biomass. */
+  startBonus?: number
+  /** Special pattern id added to the owning faction's draw pool. */
   card?: string
 }
 
@@ -29,8 +31,8 @@ export const GENES: readonly Gene[] = [
     name: 'Hardy',
     kind: 'rule',
     ashCost: 30,
-    desc: 'Overcrowding tolerance — your cells also survive with 4 neighbors.',
-    addSurvive: [4],
+    desc: 'Core strength — your cells survive even fully surrounded (8 neighbors).',
+    addSurvive: [8],
   },
   {
     key: 'highlife',
@@ -46,15 +48,15 @@ export const GENES: readonly Gene[] = [
     kind: 'rule',
     ashCost: 30,
     desc: 'Longer seed reach — place patterns up to 14 cells from your colony.',
-    tuning: { placementRadius: 14 },
+    radius: 14,
   },
   {
     key: 'thrifty',
     name: 'Thrifty',
     kind: 'rule',
     ashCost: 35,
-    desc: 'Richer metabolism — population income up 50%.',
-    tuning: { incomeScale: 0.045 },
+    desc: 'Deep reserves — begin each round with +24 biomass. A head start, not an engine.',
+    startBonus: 24,
   },
   {
     key: 'elder',

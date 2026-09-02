@@ -87,6 +87,23 @@ core-mechanics proof: planning is worth +33 points of winrate over random play
 The +33-point edge over the shared baseline (~3σ) is the game's core claim,
 stated as a number: under these mechanics, better planning reliably wins.
 
+`npm run balance` sweeps every gene in a **paired design** — the same seed set
+replayed with and without each gene, so deltas are attributable to the gene
+and not to seed luck. Current table (n=16 per gene, vs 38% same-seed
+baseline):
+
+```
+hardy +19 · highlife +25 · ranger +0 · thrifty −6 (borderline)
+elder +19 · vampire +19 · martyr +0
+```
+
+The sweep earned its keep immediately: it caught Hardy's original S+4 at a
+100% winrate (the Maze-rule carpet), caught economy genes leaking to both
+factions through shared tuning, and unmasked the Vampire at +50 once the
+paired design removed seed confounding. Three data edits later everything
+sits in the 35–65% band. Thrifty reads slightly weak because the planner
+hoards its head start — revisit with tempo-aware policies.
+
 ## Architecture
 
 ```

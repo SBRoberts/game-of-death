@@ -54,6 +54,14 @@ mouse with `{ steps: N }` so hovers read naturally on video. SFX are WebAudio
 and inaudible headless; verify audio wiring by checking zero console errors on
 select/place/invalid/storm/win paths.
 
+## Debug hooks
+
+Load with `&debug=1` to enable force-end keys: `v` wins the current duel,
+`x` loses it. This is how you drive the gauntlet interstitials (round
+cleared → next round → run complete) without playing to victory headless.
+Seed meta state pre-load via `evaluateOnNewDocument` writing `god-meta-v1`
+to localStorage (e.g. `{"ash":300,"slots":0,"owned":[],"equipped":[]}`).
+
 ## Gotchas
 
 - The claude-in-chrome extension may be disconnected; puppeteer-core is the

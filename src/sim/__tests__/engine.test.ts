@@ -168,19 +168,27 @@ describe('engine: special cells', () => {
 describe('duel: genome loadout', () => {
   it('rule genes mutate the player faction; card genes extend the pool', () => {
     const d = new Duel('loadout-test', {}, ['hardy', 'highlife', 'vampire'])
-    expect(d.state.cfg.factions[1].rule.survive & mask(4)).toBeTruthy()
+    expect(d.state.cfg.factions[1].rule.survive & mask(8)).toBeTruthy()
     expect(d.state.cfg.factions[1].rule.birth & mask(6)).toBeTruthy()
-    expect(d.state.cfg.factions[2].rule.survive & mask(4)).toBeFalsy() // rival untouched
+    expect(d.state.cfg.factions[2].rule.survive & mask(8)).toBeFalsy() // rival untouched
     expect(d.playerPool.some((p) => p.id === 'vampire')).toBe(true)
 
     const vanilla = new Duel('loadout-test')
     expect(vanilla.playerPool.some((p) => p.id === 'vampire')).toBe(false)
   })
 
+  it('economy genes are per-faction, not global', () => {
+    const d = new Duel('econ-test', {}, ['thrifty', 'ranger'])
+    expect(d.biomass[1]).toBe(d.t.startBiomass + 24)
+    expect(d.biomass[2]).toBe(d.t.startBiomass) // rival gets no head start
+    expect(d.radii[1]).toBe(14)
+    expect(d.radii[2]).toBe(10)
+  })
+
   it('rival loadout mutates faction 2 and its pool, not the player', () => {
     const d = new Duel('rival-loadout', {}, [], ['hardy', 'vampire'])
-    expect(d.state.cfg.factions[2].rule.survive & mask(4)).toBeTruthy()
-    expect(d.state.cfg.factions[1].rule.survive & mask(4)).toBeFalsy()
+    expect(d.state.cfg.factions[2].rule.survive & mask(8)).toBeTruthy()
+    expect(d.state.cfg.factions[1].rule.survive & mask(8)).toBeFalsy()
     expect(d.rivalPool.some((p) => p.id === 'vampire')).toBe(true)
     expect(d.playerPool.some((p) => p.id === 'vampire')).toBe(false)
     expect(d.poolFor(2).some((p) => p.id === 'vampire')).toBe(true)

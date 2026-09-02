@@ -100,7 +100,7 @@ export const SPECIAL_PATTERNS: readonly Pattern[] = [
   {
     id: 'elder',
     name: 'Elder',
-    cost: 16,
+    cost: 28,
     role: 'hold',
     tip: 'A single immortal cell. Ignores every death rule but the storm — the anchor your colony builds on.',
     cells: [[0, 0]],
@@ -110,9 +110,9 @@ export const SPECIAL_PATTERNS: readonly Pattern[] = [
   {
     id: 'vampire',
     name: 'Vampire',
-    cost: 20,
+    cost: 24,
     role: 'strike',
-    tip: 'Costs a fortune, feeds forever: converts one adjacent enemy every generation and never defects. Starves alone.',
+    tip: 'Costs a fortune, feeds forever: converts an adjacent enemy every third generation and never defects. Starves alone.',
     cells: [[0, 0]],
     clearance: 0,
     cellType: 2,

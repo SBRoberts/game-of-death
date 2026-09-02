@@ -12,6 +12,6 @@ export interface RoundDef {
 
 export const ROUNDS: readonly RoundDef[] = [
   { label: 'the neighbor', rivalLoadout: [], aiSamples: 6, aiActEvery: 20 },
-  { label: 'the veteran', rivalLoadout: ['hardy'], aiSamples: 8, aiActEvery: 16 },
-  { label: 'elder blood', rivalLoadout: ['hardy', 'vampire'], aiSamples: 10, aiActEvery: 13 },
+  { label: 'the veteran', rivalLoadout: ['martyr'], aiSamples: 8, aiActEvery: 16 },
+  { label: 'elder blood', rivalLoadout: ['elder', 'vampire'], aiSamples: 10, aiActEvery: 13 },
 ]

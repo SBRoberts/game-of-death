@@ -36,9 +36,11 @@ function runDuel(seed: string, loadout: string[]): Duel {
 
 console.log(`gene balance sweep: ${nDuels} duels per gene, planner mirror\n`)
 
+// Paired design: every loadout (and the baseline) replays the SAME seed set,
+// so a gene's delta is attributable to the gene, not to seed-family luck.
 let baselineWins = 0
 for (let i = 0; i < nDuels; i++) {
-  if (runDuel(`balance-baseline-${i}`, []).status === 'won') baselineWins++
+  if (runDuel(`balance-${i}`, []).status === 'won') baselineWins++
 }
 const baseline = (baselineWins / nDuels) * 100
 console.log(`${'(vanilla)'.padEnd(12)} ${baseline.toFixed(0).padStart(3)}% baseline\n`)
@@ -48,7 +50,7 @@ for (const gene of GENES) {
   let wins = 0
   const t0 = performance.now()
   for (let i = 0; i < nDuels; i++) {
-    if (runDuel(`balance-${gene.key}-${i}`, [gene.key]).status === 'won') wins++
+    if (runDuel(`balance-${i}`, [gene.key]).status === 'won') wins++
   }
   const rate = (wins / nDuels) * 100
   const delta = rate - baseline

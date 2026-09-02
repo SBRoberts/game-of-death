@@ -16,8 +16,10 @@ export interface CellTypeDef {
   steadfast?: boolean
   /** Cannot be converted by flanking or by a Vampire's drain. */
   unconvertible?: boolean
-  /** Converts one adjacent enemy cell per generation (deterministic scan). */
+  /** Converts one adjacent enemy cell (deterministic scan). */
   drain?: boolean
+  /** Drain fires only when gen % drainEvery === 0 (default: every gen). */
+  drainEvery?: number
   /** On a rules-death (not the storm), kills every adjacent enemy cell. */
   onDeathKill?: boolean
 }
@@ -45,6 +47,7 @@ export const CELL_TYPES: readonly CellTypeDef[] = [
     steadfast: true,
     unconvertible: true,
     drain: true,
+    drainEvery: 3,
   },
   {
     key: 'martyr',

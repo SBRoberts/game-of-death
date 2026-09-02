@@ -35,6 +35,10 @@ export class Duel {
   readonly playerPool: readonly Pattern[]
   /** The rival's pool — grows with its own loadout in later rounds. */
   readonly rivalPool: readonly Pattern[]
+  /** Per-faction placement radius (genes may extend the owner's only). */
+  readonly radii: number[]
+  /** Per-faction income scale (genes may boost the owner's only). */
+  readonly incomeScales: number[]
 
   private drawRng: Rng
   private rivalRng: Rng
@@ -48,26 +52,33 @@ export class Duel {
     this.seed = seed
     this.loadout = loadout
 
-    // A faction's genes build its rule and pool; only the PLAYER's genes may
-    // touch tuning (economy/reach are global knobs, so rival escalation
-    // sticks to rules and cards).
+    // A faction's genes build its rule, pool, and economy — all owned by that
+    // faction alone. (The balance sweep caught the earlier version leaking
+    // economy genes to both sides through shared tuning.)
+    const t = { ...TUNING, ...overrides }
+    this.t = t
     const build = (keys: readonly string[]) => {
       const rule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
       const pool: Pattern[] = [...PATTERNS]
+      let radius = t.placementRadius
+      let incomeScale = t.incomeScale
+      let startBonus = 0
       for (const g of keys.map(geneByKey)) {
         if (g.addSurvive) rule.survive |= mask(...g.addSurvive)
         if (g.addBirth) rule.birth |= mask(...g.addBirth)
         if (g.card) pool.push(patternById(g.card))
+        if (g.radius !== undefined) radius = g.radius
+        if (g.incomeScale !== undefined) incomeScale = g.incomeScale
+        if (g.startBonus) startBonus += g.startBonus
       }
-      return { rule, pool }
+      return { rule, pool, radius, incomeScale, startBonus }
     }
     const player = build(loadout)
     const rival = build(rivalLoadout)
-    let t = { ...TUNING, ...overrides }
-    for (const g of loadout.map(geneByKey)) if (g.tuning) t = { ...t, ...g.tuning }
-    this.t = t
     this.playerPool = player.pool
     this.rivalPool = rival.pool
+    this.radii = [0, player.radius, rival.radius, t.placementRadius]
+    this.incomeScales = [0, player.incomeScale, rival.incomeScale, 0]
     const playerRule = player.rule
 
     this.state = createState({
@@ -82,7 +93,12 @@ export class Duel {
       flankingMargin: this.t.flankingMargin,
       casualtyMargin: this.t.casualtyMargin,
     })
-    this.biomass = [0, this.t.startBiomass, this.t.startBiomass, 0]
+    this.biomass = [
+      0,
+      this.t.startBiomass + player.startBonus,
+      this.t.startBiomass + rival.startBonus,
+      0,
+    ]
     this.drawRng = rngFrom(seed, 'draw')
     this.rivalRng = rngFrom(seed, 'rival')
 
@@ -157,7 +173,7 @@ export class Duel {
   }
 
   income(faction: number): number {
-    return this.t.incomeBase + this.t.incomeScale * Math.sqrt(this.state.pops[faction])
+    return this.t.incomeBase + this.incomeScales[faction] * Math.sqrt(this.state.pops[faction])
   }
 
   tick(): void {
@@ -266,7 +282,7 @@ export class Duel {
   private withinInfluence(faction: number, x: number, y: number): boolean {
     const s = this.state
     const { width: w, height: h } = s.cfg
-    const r = this.t.placementRadius
+    const r = this.radii[faction] ?? this.t.placementRadius
     for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) {
       const base = yy * w
       for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++) {

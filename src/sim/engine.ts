@@ -134,7 +134,9 @@ export function step(s: SimState): void {
   // next state. Neighbor scan order rotates with the generation so the feeding
   // direction varies — deterministically.
   for (let i = 0; i < cells.length; i++) {
-    if (!CELL_TYPES[types[i]].drain || cells[i] === 0 || next[i] !== cells[i]) continue
+    const drainType = CELL_TYPES[types[i]]
+    if (!drainType.drain || cells[i] === 0 || next[i] !== cells[i]) continue
+    if (s.gen % (drainType.drainEvery ?? 1) !== 0) continue
     const x = i % w
     const y = Math.floor(i / w)
     const start = s.gen % 8

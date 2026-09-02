@@ -13,11 +13,17 @@ export function Genome({ meta, onBuySlot, onBuyGene, onToggleEquip, onClose }: G
   const slotCost = nextSlotCost(meta)
   return (
     <div className="genome-backdrop" onClick={onClose}>
-      <div className="genome" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="genome"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Genome — spend ash on slots and genes"
+        onClick={(e) => e.stopPropagation()}
+      >
         <header>
           <h2>GENOME</h2>
           <span className="genome-ash">⬡ {meta.ash} ash</span>
-          <button className="genome-close" onClick={onClose}>
+          <button className="genome-close" aria-label="close genome" onClick={onClose}>
             ✕
           </button>
         </header>

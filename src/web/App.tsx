@@ -16,9 +16,11 @@ import {
   CELL,
   COLORS,
   render,
+  setPalette,
   type Flash,
   type FloatText,
   type Ghost,
+  type PaletteMode,
   type Pulse,
   type Spark,
 } from './render'
@@ -131,9 +133,22 @@ export function App() {
   const [coached, setCoached] = useState(() => localStorage.getItem('god-coached') === '1')
   const stormFlashRef = useRef(0)
   const [muted, setMuted] = useState(sfx.muted)
+  const [palette, setPaletteState] = useState<PaletteMode>(() =>
+    localStorage.getItem('god-palette') === 'cfp' ? 'cfp' : 'gfp',
+  )
+  useEffect(() => {
+    setPalette(palette)
+    try {
+      localStorage.setItem('god-palette', palette)
+    } catch {
+      /* private mode */
+    }
+  }, [palette])
+  const [announce, setAnnounce] = useState('')
   const [shake, setShake] = useState('')
   const shakeTimer = useRef(0)
   const boom = useCallback(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     setShake('shaking')
     window.clearTimeout(shakeTimer.current)
     shakeTimer.current = window.setTimeout(() => setShake(''), 280)
@@ -296,6 +311,7 @@ export function App() {
       if (prevInset === 0 && duel.state.ringInset > 0) {
         stormFlashRef.current = 1
         sfx.play('storm')
+        setAnnounce('The entropy storm has begun closing in from the edges.')
       }
       prevInset = duel.state.ringInset
       if (prevStatus === 'running' && duel.status !== 'running') {
@@ -304,6 +320,13 @@ export function App() {
         const amount = ashFor(duel, runClear)
         setAshEarned(amount)
         setMeta((m) => earnAsh(m, amount))
+        setAnnounce(
+          duel.status === 'won'
+            ? runClear
+              ? `Run complete — the universe yields. ${amount} ash earned.`
+              : `Round ${round} cleared. ${amount} ash earned.`
+            : `Your colony is dead. Reached round ${round}. ${amount} ash earned.`,
+        )
       }
       prevStatus = duel.status
       stormFlashRef.current *= 0.955
@@ -477,8 +500,10 @@ export function App() {
       else if (e.key === 'q' || e.key === 'Q') selectCard(0)
       else if (e.key === 'w' || e.key === 'W') selectCard(1)
       else if (e.key === 'e' || e.key === 'E') selectCard(2)
-      else if (e.key === 'Escape') setSelected(null)
-      else if (debug && e.key === 'v') duel.forceEnd('won')
+      else if (e.key === 'Escape') {
+        setShowGenome(false)
+        setSelected(null)
+      } else if (debug && e.key === 'v') duel.forceEnd('won')
       else if (debug && e.key === 'x') duel.forceEnd('lost')
     }
     window.addEventListener('keydown', onKey)
@@ -500,6 +525,8 @@ export function App() {
             <button
               key={label}
               className={`speed ${speedIdx === i ? 'active' : ''}`}
+              aria-label={i === 0 ? 'pause (space)' : `speed ${label} (key ${i})`}
+              aria-pressed={speedIdx === i}
               onClick={() => setSpeedIdx(i)}
             >
               {label}
@@ -511,9 +538,20 @@ export function App() {
           <button
             className="mute"
             title={muted ? 'unmute' : 'mute'}
+            aria-label={muted ? 'unmute sound' : 'mute sound'}
+            aria-pressed={muted}
             onClick={() => setMuted(sfx.toggle())}
           >
             {muted ? '🔇' : '🔊'}
+          </button>
+          <button
+            className="palette-btn"
+            title="faction colors: GFP/mCherry or colorblind-safe CFP/YFP"
+            aria-label="toggle colorblind-safe faction colors"
+            aria-pressed={palette === 'cfp'}
+            onClick={() => setPaletteState((p) => (p === 'gfp' ? 'cfp' : 'gfp'))}
+          >
+            {palette === 'gfp' ? '◐' : '◑'}
           </button>
           <button className="genome-btn" onClick={() => setShowGenome(true)}>
             genome · ⬡ {meta.ash}
@@ -549,6 +587,8 @@ export function App() {
       <div className={`board-wrap ${shake} ${speedIdx === 0 ? 'planning' : ''}`}>
         <canvas
           ref={canvasRef}
+          role="img"
+          aria-label="The battlefield: a Game of Life simulation. Your colony grows from the left, the rival from the right; the board's border shows territory share."
           style={{ aspectRatio: `${duel.t.width} / ${duel.t.height}` }}
           onMouseMove={onMove}
           onMouseLeave={() => (hoverRef.current = null)}
@@ -624,6 +664,10 @@ export function App() {
           onClose={() => setShowGenome(false)}
         />
       )}
+
+      <div className="sr-only" role="status" aria-live="polite">
+        {announce}
+      </div>
 
       <footer className="help">
         <span>click card → click board to seed</span>

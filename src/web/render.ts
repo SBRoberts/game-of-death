@@ -26,7 +26,7 @@ export const COLORS = {
   foresightHit: 'rgba(255,83,64,0.45)',
   arrow: 'rgba(235,245,255,0.55)',
   flash: 'rgba(255,255,255,',
-} as const
+}
 
 const FACTION_FILL: Record<number, string> = {
   [PLAYER]: COLORS.player,
@@ -38,6 +38,45 @@ const BLOOM_RGB: Record<number, [number, number, number]> = {
   [PLAYER]: [66, 245, 155],
   [RIVAL]: [255, 83, 64],
   [RADICALS]: [95, 125, 255],
+}
+
+// ── faction palettes ───────────────────────────────────────────────────────
+// Two real fluorophore pairs. 'gfp' is the default look; 'cfp' swaps the
+// deuteranopia-hostile green/red pair for CFP-cyan vs YFP-amber (an actual
+// FRET pair) and shifts the radicals to lavender so cyan/blue never collide.
+export type PaletteMode = 'gfp' | 'cfp'
+const PALETTES: Record<PaletteMode, { you: number[]; rival: number[]; radicals: number[] }> = {
+  gfp: { you: [66, 245, 155], rival: [255, 83, 64], radicals: [95, 125, 255] },
+  cfp: { you: [80, 205, 255], rival: [255, 178, 46], radicals: [158, 145, 224] },
+}
+
+export function setPalette(mode: PaletteMode): void {
+  const p = PALETTES[mode]
+  const rgb = (c: number[]) => `rgb(${c[0]},${c[1]},${c[2]})`
+  const rgba = (c: number[], a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`
+  const lift = (c: number[]) => c.map((v) => Math.min(255, v + 70))
+  COLORS.player = rgb(p.you)
+  COLORS.rival = rgb(p.rival)
+  COLORS.radicals = rgb(p.radicals)
+  COLORS.ash[1] = rgba(p.you, 0.12)
+  COLORS.ash[2] = rgba(p.rival, 0.12)
+  COLORS.ash[3] = rgba(p.radicals, 0.09)
+  COLORS.ghostOk = rgba(lift(p.you), 0.85)
+  COLORS.ghostBad = rgba(lift(p.rival), 0.85)
+  COLORS.foresightGain = rgba(p.you, 0.3)
+  COLORS.foresightHit = rgba(p.rival, 0.45)
+  FACTION_FILL[PLAYER] = COLORS.player
+  FACTION_FILL[RIVAL] = COLORS.rival
+  FACTION_FILL[RADICALS] = COLORS.radicals
+  BLOOM_RGB[PLAYER] = p.you as [number, number, number]
+  BLOOM_RGB[RIVAL] = p.rival as [number, number, number]
+  BLOOM_RGB[RADICALS] = p.radicals as [number, number, number]
+  GRADE_COLORS.good = rgb(p.you)
+  GRADE_COLORS.great = rgb(lift(p.you))
+  const root = document.documentElement.style
+  root.setProperty('--you', COLORS.player)
+  root.setProperty('--rival', COLORS.rival)
+  root.setProperty('--dapi', COLORS.radicals)
 }
 
 export interface Ghost {
@@ -90,12 +129,12 @@ export interface FxState {
 }
 
 const GRADE_STEPS = { poor: 1, fair: 2, good: 3, great: 4 } as const
-const GRADE_COLORS = {
-  poor: '#8a93a5',
+const GRADE_COLORS: Record<'poor' | 'fair' | 'good' | 'great', string> = {
+  poor: '#98a2b5',
   fair: '#d7e3ff',
   good: '#42f59b',
   great: '#c6ff5e',
-} as const
+}
 
 // ── cached layers ──────────────────────────────────────────────────────────
 let bloomCanvas: HTMLCanvasElement | null = null
@@ -344,7 +383,7 @@ function drawMomentumFrame(
   ctx.save()
   ctx.setLineDash([4, 6])
   ctx.lineDashOffset = -(now / 90)
-  ctx.strokeStyle = 'rgba(95,125,255,0.5)'
+  ctx.strokeStyle = COLORS.radicals
   ctx.lineWidth = 2
   ctx.globalAlpha = 0.7
   if (RC - rh - gh > 3) strokePiece(ctx, gh + 2, RC - rh - 2)
@@ -460,14 +499,16 @@ export function render(
       if (lasting.has(i)) continue
       ctx.fillRect((i % w) * CELL + 1, Math.floor(i / w) * CELL + 1, CELL - 3, CELL - 3)
     }
-    ctx.fillStyle = 'rgba(66,245,155,0.62)'
+    ctx.fillStyle = COLORS.player
+    ctx.globalAlpha = 0.62
     for (const i of impact.lasting) {
-      const x = (i % w) * CELL
-      const y = Math.floor(i / w) * CELL
-      ctx.fillRect(x + 1, y + 1, CELL - 3, CELL - 3)
-      ctx.strokeStyle = 'rgba(200,255,225,0.7)'
-      ctx.lineWidth = 1
-      ctx.strokeRect(x + 0.5, y + 0.5, CELL - 2, CELL - 2)
+      ctx.fillRect((i % w) * CELL + 1, Math.floor(i / w) * CELL + 1, CELL - 3, CELL - 3)
+    }
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = 'rgba(235,245,255,0.7)'
+    ctx.lineWidth = 1
+    for (const i of impact.lasting) {
+      ctx.strokeRect((i % w) * CELL + 0.5, Math.floor(i / w) * CELL + 0.5, CELL - 2, CELL - 2)
     }
     ctx.fillStyle = COLORS.foresightHit
     for (const i of impact.destroyed) {
@@ -573,33 +614,40 @@ export function render(
   drawMomentumFrame(ctx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL], fx.now, duel.status)
 
   // Cursor-side placement evaluation: the verdict lives where you're aiming.
+  // Sized for reading, not squinting: 14px type, generous padding, an opaque
+  // panel, and a grade row with fat pips.
   if (fx.hint && ghost) {
     const gx = Math.max(...ghost.cells.map(([x]) => x))
     const gy = Math.min(...ghost.cells.map(([, y]) => y))
-    ctx.font = '11px ui-monospace, Menlo, monospace'
-    ctx.textAlign = 'left'
     const grade = fx.hint.grade
-    const gradeText = grade ? ` ${grade.toUpperCase()}` : ''
+    const font = 'bold 14px ui-monospace, Menlo, monospace'
+    ctx.font = font
+    ctx.textAlign = 'left'
+    const gradeText = grade ? `${grade.toUpperCase()}` : ''
     const pips = grade ? '●'.repeat(GRADE_STEPS[grade]) + '○'.repeat(4 - GRADE_STEPS[grade]) : ''
     const textW = ctx.measureText(fx.hint.text).width
-    const extraW = grade ? ctx.measureText(` ${pips}${gradeText}`).width : 0
-    const boxW = textW + extraW + 18
-    const boxH = 22
-    let bx = (gx + 2) * CELL
+    const extraW = grade ? ctx.measureText(`${pips}  ${gradeText}`).width + 14 : 0
+    const pad = 13
+    const boxW = textW + extraW + pad * 2
+    const boxH = 34
+    let bx = (gx + 2.5) * CELL
     let by = (gy - 1) * CELL - boxH / 2
-    if (bx + boxW > W - 4) bx = Math.max(4, (Math.min(...ghost.cells.map(([x]) => x)) - 2) * CELL - boxW)
-    by = Math.min(Math.max(4, by), H - boxH - 4)
-    ctx.fillStyle = 'rgba(8,11,17,0.92)'
-    ctx.strokeStyle = grade ? GRADE_COLORS[grade] : 'rgba(255,140,110,0.6)'
+    if (bx + boxW > W - 6)
+      bx = Math.max(6, (Math.min(...ghost.cells.map(([x]) => x)) - 2.5) * CELL - boxW)
+    by = Math.min(Math.max(6, by), H - boxH - 6)
+    ctx.fillStyle = 'rgba(7,10,16,0.97)'
+    ctx.strokeStyle = grade ? GRADE_COLORS[grade] : 'rgba(255,150,120,0.8)'
+    ctx.lineWidth = 1.5
     ctx.beginPath()
-    ctx.roundRect(bx, by, boxW, boxH, 5)
+    ctx.roundRect(bx, by, boxW, boxH, 8)
     ctx.fill()
     ctx.stroke()
-    ctx.fillStyle = grade ? '#c9d4e6' : '#ff9f8a'
-    ctx.fillText(fx.hint.text, bx + 9, by + 15)
+    const midY = by + boxH / 2 + 5
+    ctx.fillStyle = grade ? '#dbe5f4' : '#ffb3a0'
+    ctx.fillText(fx.hint.text, bx + pad, midY)
     if (grade) {
       ctx.fillStyle = GRADE_COLORS[grade]
-      ctx.fillText(` ${pips}${gradeText}`, bx + 9 + textW, by + 15)
+      ctx.fillText(`${pips}  ${gradeText}`, bx + pad + textW + 14, midY)
     }
   }
 

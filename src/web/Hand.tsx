@@ -50,6 +50,8 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
             onMouseMove={tiltMove}
             onMouseLeave={tiltReset}
             disabled={duel.status !== 'running'}
+            aria-pressed={selected === i}
+            aria-label={`${p.name}, ${p.role}, costs ${p.cost} biomass${poor ? ', cannot afford' : ''}. ${p.tip}`}
           >
             <span className="card-key">{['Q', 'W', 'E'][i] ?? ''}</span>
             <svg viewBox={`0 0 ${size} ${size}`} className="card-preview">

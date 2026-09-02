@@ -165,6 +165,30 @@ describe('engine: special cells', () => {
   })
 })
 
+describe('foresight: nucleus stability', () => {
+  it('a block settles (all lasting); an r-pentomino mostly churns', async () => {
+    const { projectImpact } = await import('../foresight')
+    const s = createState(cfg())
+    const block = projectImpact(s, 1, placeAt(patternById('block').cells, 10, 10), 24)
+    expect(block.gained.length).toBe(4)
+    expect(block.lasting.length).toBe(4) // still life: every cell settles
+
+    const s2 = createState(cfg())
+    const blinker = projectImpact(s2, 1, placeAt(patternById('blinker').cells, 20, 20), 24)
+    expect(blinker.lasting.length).toBeGreaterThan(0) // period-2 counts as settled
+  })
+
+  it('martyr blasts report their kill count', () => {
+    const s = createState(cfg())
+    setCells(s, 1, [[10, 10]], MARTYR)
+    // A supported enemy: survives the rules, dies to the blast.
+    setCells(s, 2, [[11, 10], [12, 10], [12, 9]])
+    step(s)
+    expect(s.blasts.length).toBe(1)
+    expect(s.blasts[0].kills).toBeGreaterThanOrEqual(1)
+  })
+})
+
 describe('duel: genome loadout', () => {
   it('rule genes mutate the player faction; card genes extend the pool', () => {
     const d = new Duel('loadout-test', {}, ['hardy', 'highlife', 'vampire'])

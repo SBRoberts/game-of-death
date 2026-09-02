@@ -13,6 +13,12 @@ export interface Impact {
   gained: number[]
   /** Cell indices where another faction's future is disrupted by it. */
   destroyed: number[]
+  /**
+   * The subset of gained cells that have SETTLED — still yours two further
+   * generations on, so still lifes and period-2 oscillators both qualify.
+   * This is the "will it form a stable nucleus?" answer.
+   */
+  lasting: number[]
 }
 
 export function projectImpact(
@@ -43,5 +49,14 @@ export function projectImpact(
     if (b === faction && a !== faction) gained.push(i)
     else if (a !== 0 && a !== faction && b !== a) destroyed.push(i)
   }
-  return { gained, destroyed }
+
+  // Stability probe: two more generations of the alt future. Gained cells
+  // still owned afterward have settled into a nucleus rather than churn.
+  for (let k = 0; k < 2; k++) {
+    if (insetAt) alt.ringInset = insetAt(alt.gen + 1)
+    step(alt)
+  }
+  const lasting = gained.filter((i) => alt.cells[i] === faction)
+
+  return { gained, destroyed, lasting }
 }

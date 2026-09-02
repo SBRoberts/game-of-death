@@ -54,6 +54,6 @@ export interface SimState {
   deaths: Int32Array
   /** Cumulative conversions, indexed [from * factions.length + to]. */
   converts: Int32Array
-  /** Cell indices of martyr detonations THIS step (cleared each step). */
-  blasts: number[]
+  /** Martyr detonations THIS step: cell index + enemies killed (cleared each step). */
+  blasts: Array<{ i: number; kills: number }>
 }

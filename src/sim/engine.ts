@@ -177,7 +177,7 @@ export function step(s: SimState): void {
     const x = i % w
     const y = Math.floor(i / w)
     if (!inSafe(x, y)) continue
-    s.blasts.push(i)
+    let kills = 0
     for (const [dx, dy] of NEIGHBORS) {
       const xx = x + dx
       const yy = y + dy
@@ -187,8 +187,10 @@ export function step(s: SimState): void {
         deaths[next[j]]++
         next[j] = 0
         nextTypes[j] = 0
+        kills++
       }
     }
+    s.blasts.push({ i, kills })
   }
 
   // Specials edit the grid post-pass, so recount populations wholesale.

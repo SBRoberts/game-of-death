@@ -51,6 +51,7 @@ export function Hand({ duel, biomass, selected, rotation, onSelect }: HandProps)
             onMouseLeave={tiltReset}
             disabled={duel.status !== 'running'}
           >
+            <span className="card-key">{['Q', 'W', 'E'][i] ?? ''}</span>
             <svg viewBox={`0 0 ${size} ${size}`} className="card-preview">
               {cells.map(([x, y]) => (
                 <circle

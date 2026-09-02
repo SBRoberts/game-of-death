@@ -137,9 +137,88 @@ button:active {
   margin-left: 8px;
 }
 
+.popbar {
+  display: flex;
+  width: min(1024px, 92vw);
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #10141d;
+}
+
+.popbar span {
+  transition: width 400ms ease;
+}
+
+.pop-you {
+  background: var(--you);
+  opacity: 0.85;
+}
+
+.pop-wilds {
+  background: var(--dapi);
+  opacity: 0.45;
+}
+
+.pop-rival {
+  background: var(--rival);
+  opacity: 0.85;
+}
+
 .board-wrap {
   position: relative;
   line-height: 0;
+}
+
+.board-wrap.planning canvas {
+  border-color: rgba(66, 245, 155, 0.45);
+  box-shadow: 0 0 18px rgba(66, 245, 155, 0.08);
+}
+
+.coach {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 18px;
+  padding: 7px 16px;
+  background: rgba(10, 13, 20, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.4;
+  pointer-events: none;
+  animation: overlay-in 600ms ease-out;
+  white-space: nowrap;
+}
+
+.coach b {
+  color: var(--you);
+  font-weight: 600;
+}
+
+.shop-badge {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: card-glow 1.6s ease-in-out infinite;
+}
+
+.card-key {
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  font-size: 9px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.5;
 }
 
 .board-wrap.shaking {
@@ -280,6 +359,7 @@ canvas {
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;

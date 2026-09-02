@@ -44,6 +44,17 @@ export interface Ghost {
   cells: Array<[number, number]>
   valid: boolean
   dir?: [number, number]
+  /** Show a 3×3 detonation zone around each cell (martyr). */
+  blastZone?: boolean
+}
+
+export interface FloatText {
+  x: number
+  y: number
+  text: string
+  color: string
+  ttl: number
+  max: number
 }
 
 export interface Flash {
@@ -70,6 +81,7 @@ export interface Spark {
 export interface FxState {
   pulses: Pulse[]
   sparks: Spark[]
+  floats: FloatText[]
   hoverCell: { x: number; y: number } | null
   now: number
   stormFlash: number
@@ -190,12 +202,22 @@ export function render(
   drawPuncta(ctx, s, w, RIVAL, COLORS.rival, 1)
   drawPuncta(ctx, s, w, PLAYER, COLORS.player, 1)
 
-  // Special-cell nuclei.
+  // Special-cell nuclei — and the martyr's visible tripwire.
   for (let i = 0; i < s.types.length; i++) {
     const t = s.types[i]
     if (t === 0 || s.cells[i] === 0) continue
     const cx = (i % w) * CELL + CELL / 2
     const cy = Math.floor(i / w) * CELL + CELL / 2
+    if (t === MARTYR) {
+      const breathe = 0.14 + 0.08 * Math.sin(fx.now / 320 + i)
+      ctx.strokeStyle = COLORS.martyr
+      ctx.globalAlpha = breathe
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.arc(cx, cy, CELL * 1.45, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
     if (t === VAMPIRE) {
       ctx.fillStyle = COLORS.vampire
       ctx.beginPath()
@@ -246,11 +268,23 @@ export function render(
     ctx.fillRect(0, 0, W, H)
   }
 
-  // Foresight overlay.
+  // Foresight overlay: churn is faint; cells that SETTLE read solid — the
+  // nucleus you're actually buying.
   if (impact) {
+    const lasting = new Set(impact.lasting)
     ctx.fillStyle = COLORS.foresightGain
     for (const i of impact.gained) {
+      if (lasting.has(i)) continue
       ctx.fillRect((i % w) * CELL + 1, Math.floor(i / w) * CELL + 1, CELL - 3, CELL - 3)
+    }
+    ctx.fillStyle = 'rgba(66,245,155,0.62)'
+    for (const i of impact.lasting) {
+      const x = (i % w) * CELL
+      const y = Math.floor(i / w) * CELL
+      ctx.fillRect(x + 1, y + 1, CELL - 3, CELL - 3)
+      ctx.strokeStyle = 'rgba(200,255,225,0.7)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(x + 0.5, y + 0.5, CELL - 2, CELL - 2)
     }
     ctx.fillStyle = COLORS.foresightHit
     for (const i of impact.destroyed) {
@@ -260,6 +294,18 @@ export function render(
 
   // Placement ghost + heading.
   if (ghost) {
+    // Martyr detonation zone: the threat, visible before you commit.
+    if (ghost.blastZone && ghost.valid) {
+      ctx.strokeStyle = COLORS.martyr
+      ctx.globalAlpha = 0.55
+      ctx.setLineDash([3, 3])
+      ctx.lineWidth = 1
+      for (const [x, y] of ghost.cells) {
+        ctx.strokeRect((x - 1) * CELL + 0.5, (y - 1) * CELL + 0.5, 3 * CELL - 1, 3 * CELL - 1)
+      }
+      ctx.setLineDash([])
+      ctx.globalAlpha = 1
+    }
     ctx.fillStyle = ghost.valid ? COLORS.ghostOk : COLORS.ghostBad
     ctx.globalAlpha = 0.6
     for (const [x, y] of ghost.cells) {
@@ -339,4 +385,15 @@ export function render(
   }
   ctx.fillStyle = vignette
   ctx.fillRect(0, 0, W, H)
+
+  // Floating kill counts — drawn above the glass so they always read.
+  for (const f of fx.floats) {
+    const t = 1 - f.ttl / f.max
+    ctx.globalAlpha = Math.min(1, f.ttl / (f.max * 0.4))
+    ctx.fillStyle = f.color
+    ctx.font = 'bold 11px ui-monospace, Menlo, monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText(f.text, f.x * CELL, f.y * CELL - t * 14)
+    ctx.globalAlpha = 1
+  }
 }

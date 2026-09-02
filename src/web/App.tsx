@@ -12,12 +12,31 @@ import {
   rotateDir,
   type Impact,
 } from '../sim'
-import { CELL, COLORS, render, type Flash, type Ghost, type Pulse, type Spark } from './render'
+import {
+  CELL,
+  COLORS,
+  render,
+  type Flash,
+  type FloatText,
+  type Ghost,
+  type Pulse,
+  type Spark,
+} from './render'
 import { Hand } from './Hand'
 import { Genome } from './Genome'
 import { CashOut } from './CashOut'
 import { sfx, type SfxName } from './audio'
-import { ashBreakdown, ashFor, buyGene, buySlot, earnAsh, loadMeta, toggleEquip } from './meta'
+import {
+  ashBreakdown,
+  ashFor,
+  buyGene,
+  buySlot,
+  earnAsh,
+  loadMeta,
+  nextSlotCost,
+  toggleEquip,
+} from './meta'
+import { GENES } from '../sim'
 
 const PLACE_SOUND: Record<string, SfxName> = {
   hold: 'place_hold',
@@ -106,6 +125,8 @@ export function App() {
   const flashesRef = useRef<Flash[]>([])
   const pulsesRef = useRef<Pulse[]>([])
   const sparksRef = useRef<Spark[]>([])
+  const floatsRef = useRef<FloatText[]>([])
+  const [coached, setCoached] = useState(() => localStorage.getItem('god-coached') === '1')
   const stormFlashRef = useRef(0)
   const [muted, setMuted] = useState(sfx.muted)
   const [shake, setShake] = useState('')
@@ -147,6 +168,20 @@ export function App() {
     setSpeedIdx((s) => (s === 0 ? lastSpeedRef.current : 0))
   }, [])
 
+  const selectCard = useCallback(
+    (i: number) => {
+      setSelected((cur) => {
+        if (cur === i) return null
+        const id = duel.hand[i]
+        if (!id) return cur
+        setRotation(aimRotation(id))
+        sfx.play('select')
+        return i
+      })
+    },
+    [duel],
+  )
+
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
     const canvas = canvasRef.current
@@ -184,17 +219,29 @@ export function App() {
           acc -= 1
           batch++
           ticked = true
-          // Martyr detonations: ring, boom, and a kick of the slide.
+          // Martyr detonations: ring, boom, kill count, a kick of the slide.
           for (const b of duel.state.blasts) {
             const w = duel.t.width
+            const bx = (b.i % w) + 0.5
+            const by = Math.floor(b.i / w) + 0.5
             pulsesRef.current.push({
-              x: (b % w) + 0.5,
-              y: Math.floor(b / w) + 0.5,
+              x: bx,
+              y: by,
               ttl: 26,
               max: 26,
               maxR: 4.5 * CELL,
               color: COLORS.martyr,
             })
+            if (b.kills > 0) {
+              floatsRef.current.push({
+                x: bx,
+                y: by - 0.8,
+                text: `☠${b.kills}`,
+                color: COLORS.martyr,
+                ttl: 50,
+                max: 50,
+              })
+            }
             if (now - lastBoomAt > 180) {
               sfx.play('boom')
               lastBoomAt = now
@@ -263,7 +310,13 @@ export function App() {
           const score = impactScore(cells, impact, RIVAL, ghost.cost)
           const ratio = score / ghost.cost
           hintGrade = ratio < 0 ? 'poor' : ratio < 0.5 ? 'fair' : ratio < 1.5 ? 'good' : 'great'
-          hintText = `+${impact.gained.length} you · −${rivalHit} rival · ${wildsTouched} wilds`
+          const settle =
+            impact.lasting.length > 0
+              ? ` (${impact.lasting.length} settle)`
+              : impact.gained.length > 2
+                ? ' (burns out)'
+                : ''
+          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${wildsTouched} wilds`
         }
       }
 
@@ -276,9 +329,13 @@ export function App() {
       sparksRef.current = sparksRef.current
         .map((sp) => ({ ...sp, ttl: sp.ttl - 1 }))
         .filter((sp) => sp.ttl > 0)
+      floatsRef.current = floatsRef.current
+        .map((f) => ({ ...f, ttl: f.ttl - 1 }))
+        .filter((f) => f.ttl > 0)
       render(ctx, duel, ghost, impact, flashesRef.current, {
         pulses: pulsesRef.current,
         sparks: sparksRef.current,
+        floats: floatsRef.current,
         hoverCell: ghost ? null : hoverRef.current,
         now,
         stormFlash: stormFlashRef.current,
@@ -318,7 +375,7 @@ export function App() {
       const rot = rotationRef.current
       const { pattern, cells, valid, problem } = duel.ghostFor(PLAYER, id, hover.x, hover.y, rot)
       const dir = pattern.dir ? rotateDir(pattern.dir, rot) : undefined
-      return { cells, valid, dir, problem, cost: pattern.cost }
+      return { cells, valid, dir, problem, cost: pattern.cost, blastZone: id === 'martyr' }
     }
 
     // Foresight is ~1ms of double-simulation; cache it per (spot, card, gen).
@@ -362,6 +419,10 @@ export function App() {
     const id = duel.hand[selected]
     const placed = duel.playCard(selected, x, y, rotation)
     if (placed && id) {
+      if (!coached) {
+        setCoached(true)
+        localStorage.setItem('god-coached', '1')
+      }
       const pattern = patternById(id)
       flashesRef.current.push({ cells: placed, ttl: 12 })
       const cx = placed.reduce((a, [px]) => a + px, 0) / placed.length + 0.5
@@ -395,13 +456,16 @@ export function App() {
       } else if (e.key >= '1' && e.key <= '4') setSpeedIdx(Number(e.key))
       else if (e.key === 'r' || e.key === 'R') setRotation((r) => (r + 1) % 4)
       else if (e.key === 'n' || e.key === 'N') newRun()
+      else if (e.key === 'q' || e.key === 'Q') selectCard(0)
+      else if (e.key === 'w' || e.key === 'W') selectCard(1)
+      else if (e.key === 'e' || e.key === 'E') selectCard(2)
       else if (e.key === 'Escape') setSelected(null)
       else if (debug && e.key === 'v') duel.forceEnd('won')
       else if (debug && e.key === 'x') duel.forceEnd('lost')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePause, newRun, debug, duel])
+  }, [togglePause, newRun, debug, duel, selectCard])
 
   const stormLabel =
     hud === null ? '' : hud.inset > 0 ? `storm +${hud.inset}` : `storm in ${hud.stormEta}g`
@@ -451,11 +515,31 @@ export function App() {
           </button>
           <button className="genome-btn" onClick={() => setShowGenome(true)}>
             genome · ⬡ {meta.ash}
+            {(() => {
+              const slotCost = nextSlotCost(meta)
+              const canShop =
+                (slotCost !== null && meta.ash >= slotCost) ||
+                GENES.some((g) => !meta.owned.includes(g.key) && meta.ash >= g.ashCost)
+              return canShop ? <span className="shop-badge" /> : null
+            })()}
           </button>
         </div>
       </header>
 
-      <div className={`board-wrap ${shake}`}>
+      <div className="popbar" title="territory: you vs wilds vs rival">
+        {(() => {
+          const total = (hud?.playerPop ?? 1) + (hud?.rivalPop ?? 1) + (hud?.wildsPop ?? 0) || 1
+          return (
+            <>
+              <span className="pop-you" style={{ width: `${((hud?.playerPop ?? 0) / total) * 100}%` }} />
+              <span className="pop-wilds" style={{ width: `${((hud?.wildsPop ?? 0) / total) * 100}%` }} />
+              <span className="pop-rival" style={{ width: `${((hud?.rivalPop ?? 0) / total) * 100}%` }} />
+            </>
+          )
+        })()}
+      </div>
+
+      <div className={`board-wrap ${shake} ${speedIdx === 0 ? 'planning' : ''}`}>
         {hud?.hint && (
           <div className={`impact-readout ${hud.grade ?? 'problem'}`}>
             {hud.hint}
@@ -470,6 +554,19 @@ export function App() {
           onClick={onClick}
           onContextMenu={onContextMenu}
         />
+        {!coached && hud && hud.status === 'running' && (
+          <div className="coach">
+            <span>
+              <b>Q/W/E</b> pick a card
+            </span>
+            <span>
+              <b>R</b> rotates · click the slide to seed
+            </span>
+            <span>
+              <b>space</b> holds time while you plan
+            </span>
+          </div>
+        )}
         {hud && hud.status !== 'running' && (
           <div className={`overlay ${hud.status}`}>
             <div className="verdict">
@@ -514,17 +611,7 @@ export function App() {
         biomass={hud?.biomass ?? 0}
         selected={selected}
         rotation={rotation}
-        onSelect={(i) =>
-          setSelected((cur) => {
-            if (cur === i) return null
-            const id = duel.hand[i]
-            if (id) {
-              setRotation(aimRotation(id))
-              sfx.play('select')
-            }
-            return i
-          })
-        }
+        onSelect={selectCard}
       />
 
       {showGenome && (

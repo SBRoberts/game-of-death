@@ -122,8 +122,10 @@ export function smartAct(
     const ay = Math.floor(anchor / w)
     const dx = Math.sign(cx - ax)
     const dy = Math.sign(cy - ay)
-    const ox = ax + dx * (2 + pickInt(rng, 6)) + pickInt(rng, 7) - 3
-    const oy = ay + dy * (2 + pickInt(rng, 6)) + pickInt(rng, 7) - 3
+    // Sample the faction's actual legal reach, so reach genes matter.
+    const reach = Math.max(4, (duel.radii[faction] ?? 10) - 2)
+    const ox = ax + dx * (2 + pickInt(rng, reach)) + pickInt(rng, 7) - 3
+    const oy = ay + dy * (2 + pickInt(rng, reach)) + pickInt(rng, 7) - 3
     const rot = pattern.dir ? aimRot(pattern.dir, cx - ox, cy - oy) : pickInt(rng, 4)
     const cells = duel.patternCells(pattern, ox, oy, rot)
     if (!duel.canPlace(faction, cells, pattern.clearance)) continue

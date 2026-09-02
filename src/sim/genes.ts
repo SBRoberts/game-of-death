@@ -47,8 +47,8 @@ export const GENES: readonly Gene[] = [
     kind: 'rule',
     levels: [
       { ashCost: 30, desc: 'Core strength — your cells survive fully surrounded (8).', addSurvive: [8] },
-      { ashCost: 45, desc: 'Your cells survive dense crowds (7–8 neighbors).', addSurvive: [7, 8] },
-      { ashCost: 70, desc: 'Your cells thrive in the crush (6–8 neighbors).', addSurvive: [6, 7, 8] },
+      { ashCost: 85, desc: 'Your cells survive dense crowds (7–8 neighbors).', addSurvive: [7, 8] },
+      { ashCost: 160, desc: 'Your cells thrive in the crush (6–8 neighbors).', addSurvive: [6, 7, 8] },
     ],
   },
   {
@@ -57,8 +57,8 @@ export const GENES: readonly Gene[] = [
     kind: 'rule',
     levels: [
       { ashCost: 40, desc: 'Replicator blood — your births also trigger on 6.', addBirth: [6] },
-      { ashCost: 55, desc: 'Births trigger on 6 or 8 neighbors.', addBirth: [6, 8] },
-      { ashCost: 85, desc: 'Births trigger on any of 6, 7, 8.', addBirth: [6, 7, 8] },
+      { ashCost: 90, desc: 'Births trigger on 6 or 8 neighbors.', addBirth: [6, 8] },
+      { ashCost: 170, desc: 'Births trigger on any of 6, 7, 8.', addBirth: [6, 7, 8] },
     ],
   },
   {
@@ -87,8 +87,8 @@ export const GENES: readonly Gene[] = [
     kind: 'card',
     levels: [
       { ashCost: 60, desc: 'Unlock the Elder: a single immortal anchor cell (⬢28).', card: 'elder' },
-      { ashCost: 50, desc: 'Elders root cheaper (⬢23).', card: 'elder', cardCost: 23 },
-      { ashCost: 70, desc: 'Elders root cheap enough to garden with (⬢18).', card: 'elder', cardCost: 18 },
+      { ashCost: 75, desc: 'Elders root cheaper (⬢23).', card: 'elder', cardCost: 23 },
+      { ashCost: 110, desc: 'Elders root cheap enough to garden with (⬢18).', card: 'elder', cardCost: 18 },
     ],
   },
   {
@@ -98,13 +98,13 @@ export const GENES: readonly Gene[] = [
     levels: [
       { ashCost: 75, desc: 'Unlock the Vampire: converts an enemy every 3rd generation.', card: 'vampire' },
       {
-        ashCost: 60,
+        ashCost: 80,
         desc: 'Vampire II feeds every other generation.',
         card: 'vampire',
         cardType: VAMPIRE_SWIFT,
       },
       {
-        ashCost: 90,
+        ashCost: 130,
         desc: 'Vampire III feeds every generation.',
         card: 'vampire',
         cardType: VAMPIRE_ELDEST,
@@ -119,7 +119,7 @@ export const GENES: readonly Gene[] = [
       { ashCost: 45, desc: 'Unlock the Martyr: detonates on death (⬢10).', card: 'martyr' },
       { ashCost: 40, desc: 'Martyrs seed cheaper (⬢7) — lay minefields.', card: 'martyr', cardCost: 7 },
       {
-        ashCost: 55,
+        ashCost: 70,
         desc: 'Martyr III detonates in a 5×5 blast.',
         card: 'martyr',
         cardCost: 7,

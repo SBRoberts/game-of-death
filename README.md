@@ -100,9 +100,20 @@ elder +19 · vampire +19 · martyr +0
 The sweep earned its keep immediately: it caught Hardy's original S+4 at a
 100% winrate (the Maze-rule carpet), caught economy genes leaking to both
 factions through shared tuning, and unmasked the Vampire at +50 once the
-paired design removed seed confounding. Three data edits later everything
-sits in the 35–65% band. Thrifty reads slightly weak because the planner
-hoards its head start — revisit with tempo-aware policies.
+paired design removed seed confounding.
+
+With gene LEVELS, the sweep tests all 22 rungs. Findings and policy:
+
+- Card-gene ladders have the ideal shape (martyr 42→58→67%): each rung a
+  real step, top rung hot but honest.
+- Rule-digit ladders escalate to jackpot tier (hardy@3 measured 100%).
+  Deliberate design response: **price, don't flatten** — in a single-player
+  roguelite, breaking the game is the earned fantasy. Top rungs cost
+  130–170 ash (several full runs); the rival fields the same genes in
+  later rounds.
+- Ranger/Thrifty read flat to the planner (it hoards and under-reaches);
+  the sampler is now reach-aware so Ranger participates. Their real value
+  is human tempo and options — known policy blindness.
 
 ## Architecture
 

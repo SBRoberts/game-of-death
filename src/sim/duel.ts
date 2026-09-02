@@ -7,6 +7,7 @@
 import { createState, setCells, step } from './engine'
 import { PATTERNS, RADICAL_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
 import { geneByKey, normalizeChoice, type GeneChoice } from './genes'
+import { seedById } from './seeds'
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, mask, type Rule, type SimState } from './types'
@@ -43,14 +44,19 @@ export class Duel {
   private drawRng: Rng
   private rivalRng: Rng
 
+  /** The player's chosen starting formation (see seeds.ts). */
+  readonly colonySeed: string
+
   constructor(
     seed: string,
     overrides: Partial<Tuning> = {},
     loadout: readonly GeneChoice[] = [],
     rivalLoadout: readonly GeneChoice[] = [],
+    colonySeed = 'soup',
   ) {
     this.seed = seed
     this.loadout = loadout
+    this.colonySeed = colonySeed
 
     // A faction's genes build its rule, pool, and economy — all owned by that
     // faction alone. Each gene applies at its chosen level; card genes may
@@ -115,7 +121,7 @@ export class Duel {
     this.rivalRng = rngFrom(seed, 'rival')
 
     const soupRng = rngFrom(seed, 'soup')
-    this.seedColony(PLAYER, Math.floor(this.t.width * 0.22), Math.floor(this.t.height / 2), soupRng)
+    this.seedColony(PLAYER, Math.floor(this.t.width * 0.22), Math.floor(this.t.height / 2), soupRng, colonySeed)
     this.seedColony(RIVAL, Math.floor(this.t.width * 0.78), Math.floor(this.t.height / 2), soupRng)
     this.seedRadicals(rngFrom(seed, 'radicals'))
 
@@ -146,7 +152,21 @@ export class Duel {
     }
   }
 
-  private seedColony(faction: number, cx: number, cy: number, rng: Rng): void {
+  private seedColony(faction: number, cx: number, cy: number, rng: Rng, colonySeed = 'soup'): void {
+    const pattern = colonySeed === 'soup' ? null : seedById(colonySeed).cells
+    if (pattern) {
+      // Stamp the chosen formation centered on the colony origin.
+      const w = Math.max(...pattern.map(([x]) => x)) + 1
+      const h = Math.max(...pattern.map(([, y]) => y)) + 1
+      const ox = cx - Math.floor(w / 2)
+      const oy = cy - Math.floor(h / 2)
+      setCells(
+        this.state,
+        faction,
+        pattern.map(([x, y]) => [ox + x, oy + y] as const),
+      )
+      return
+    }
     const r = this.t.seedBlobRadius
     const coords: Array<[number, number]> = []
     for (let dy = -r; dy <= r; dy++) {

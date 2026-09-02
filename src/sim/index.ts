@@ -1,6 +1,7 @@
 export * from './types'
 export * from './celltypes'
 export * from './genes'
+export * from './seeds'
 export * from './rounds'
 export * from './rng'
 export * from './tuning'

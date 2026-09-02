@@ -4,9 +4,12 @@
  * receives the equipped loadout as a plain argument.
  */
 
-import { Duel, SLOT_COSTS, geneByKey, maxLevel, type GeneChoice } from '../sim'
+import { Duel, SEEDS, SLOT_COSTS, geneByKey, maxLevel, seedById, type GeneChoice } from '../sim'
 
 const KEY = 'god-meta-v1'
+
+/** Seeds owned from the start: the soup, and the free challenge. */
+const STARTER_SEEDS = SEEDS.filter((s) => s.ashCost === 0).map((s) => s.id)
 
 export interface MetaState {
   ash: number
@@ -14,29 +17,49 @@ export interface MetaState {
   /** Gene key → owned level (absent = not owned). */
   levels: Record<string, number>
   equipped: string[]
+  /** Owned starting seeds and the one selected for the next run. */
+  seedsOwned: string[]
+  seedSel: string
+  /** Completed challenge-seed ids (bounty already paid). */
+  challenges: string[]
 }
 
 export function loadMeta(): MetaState {
+  const fresh = (): MetaState => ({
+    ash: 0,
+    slots: 0,
+    levels: {},
+    equipped: [],
+    seedsOwned: [...STARTER_SEEDS],
+    seedSel: 'soup',
+    challenges: [],
+  })
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
-      const m = JSON.parse(raw) as MetaState & { owned?: string[] }
+      const m = JSON.parse(raw) as Partial<MetaState> & { owned?: string[] }
       // v1 migration: an `owned` array becomes level-1 entries.
       const levels: Record<string, number> = { ...(m.levels ?? {}) }
       if (Array.isArray(m.owned)) for (const k of m.owned) levels[k] ??= 1
+      // v2→v3 migration: seeds/challenges default to the starter set.
+      const seedsOwned = Array.from(new Set([...STARTER_SEEDS, ...(m.seedsOwned ?? [])]))
+      const seedSel = seedsOwned.includes(m.seedSel ?? '') ? m.seedSel! : 'soup'
       return {
-        ash: m.ash | 0,
-        slots: Math.min(m.slots | 0, SLOT_COSTS.length),
+        ash: m.ash! | 0,
+        slots: Math.min(m.slots! | 0, SLOT_COSTS.length),
         levels,
         equipped: Array.isArray(m.equipped)
-          ? m.equipped.filter((k) => levels[k]).slice(0, m.slots | 0)
+          ? m.equipped.filter((k) => levels[k]).slice(0, m.slots! | 0)
           : [],
+        seedsOwned,
+        seedSel,
+        challenges: Array.isArray(m.challenges) ? m.challenges : [],
       }
     }
   } catch {
     /* corrupted or unavailable: start fresh */
   }
-  return { ash: 0, slots: 0, levels: {}, equipped: [] }
+  return fresh()
 }
 
 /** The equipped loadout with levels, ready to hand to a Duel. */
@@ -136,4 +159,34 @@ export function toggleEquip(m: MetaState, key: string): MetaState {
       ? [...m.equipped, key]
       : m.equipped
   return save({ ...m, equipped })
+}
+
+// ── seeds ───────────────────────────────────────────────────────────────────
+
+/** Buy an unlockable seed (owned seeds are a no-op). */
+export function buySeed(m: MetaState, id: string): MetaState {
+  if (m.seedsOwned.includes(id)) return m
+  const cost = seedById(id).ashCost
+  if (m.ash < cost) return m
+  return save({ ...m, ash: m.ash - cost, seedsOwned: [...m.seedsOwned, id] })
+}
+
+/** Choose the seed for the next run (owned only). */
+export function selectSeed(m: MetaState, id: string): MetaState {
+  if (!m.seedsOwned.includes(id)) return m
+  return save({ ...m, seedSel: id })
+}
+
+/**
+ * Pay a challenge-seed bounty the first time its condition is met. Returns the
+ * updated state and the bounty granted (0 if none), so the caller can announce.
+ */
+export function claimChallenge(m: MetaState, seedId: string): { meta: MetaState; bounty: number } {
+  const seed = seedById(seedId)
+  if (!seed.challenge || m.challenges.includes(seedId)) return { meta: m, bounty: 0 }
+  const bounty = seed.challenge.rewardAsh
+  return {
+    meta: save({ ...m, ash: m.ash + bounty, challenges: [...m.challenges, seedId] }),
+    bounty,
+  }
 }

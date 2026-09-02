@@ -16,6 +16,7 @@ import {
 import {
   CELL,
   COLORS,
+  SCHEMES,
   render,
   setCell,
   setPalette,
@@ -29,19 +30,24 @@ import {
 import { Hand } from './Hand'
 import { Genome } from './Genome'
 import { CashOut } from './CashOut'
+import { Settings } from './Settings'
 import { sfx, type SfxName } from './audio'
 import {
   ashBreakdown,
   ashFor,
   buyGene,
+  buySeed,
   buySlot,
+  claimChallenge,
   earnAsh,
   loadMeta,
   loadoutOf,
   nextSlotCost,
+  selectSeed,
   toggleEquip,
   upgradeCost,
 } from './meta'
+import { seedById } from '../sim'
 
 const PLACE_SOUND: Record<string, SfxName> = {
   hold: 'place_hold',
@@ -138,7 +144,10 @@ function computeLayout(w: number, h: number): Layout {
     cssW = Math.floor(128 * 4 * scale)
     cssH = Math.floor(80 * 4 * scale)
   } else {
-    cell = Math.min(cell, 14)
+    // Float fills a 16:10 window, so let its cells grow with the screen; the
+    // dock keeps a moderate cap. Islands anchor to the board, not the window,
+    // so any residual mat is a hairline margin rather than detached chrome.
+    cell = Math.min(cell, mount === 'float' ? 20 : 14)
     cssW = 128 * cell
     cssH = 80 * cell
   }
@@ -231,27 +240,20 @@ function ThrottleWell({
   )
 }
 
-function FilterSet({
-  palette,
-  onToggle,
-}: {
-  palette: PaletteMode
-  onToggle: () => void
-}) {
-  const [you, rival] = palette === 'gfp' ? ['GFP', 'mCherry'] : ['CFP', 'YFP']
+function FilterSet({ scheme, onOpen }: { scheme: PaletteMode; onOpen: () => void }) {
+  const s = SCHEMES[scheme]
   return (
     <button
       className="filter-set"
-      title="swap the filter set — the other pair is colorblind-safe"
-      aria-label={`filter set ${you} and ${rival}; activate to swap stains`}
-      aria-pressed={palette === 'cfp'}
-      onClick={onToggle}
+      title="filter set & vision options"
+      aria-label={`filter set ${s.youName} and ${s.rivalName}; open vision settings`}
+      onClick={onOpen}
     >
       <span className="lbl-xs">FILTER SET</span>
       <span className="stains">
-        <span className="stain-you">{you}</span>
+        <span className="stain-you">{s.youName}</span>
         <span className="stain-sep">/</span>
-        <span className="stain-rival">{rival}</span>
+        <span className="stain-rival">{s.rivalName}</span>
       </span>
     </button>
   )
@@ -301,6 +303,7 @@ export function App() {
   const [meta, setMeta] = useState(loadMeta)
   const [showGenome, setShowGenome] = useState(false)
   const [ashEarned, setAshEarned] = useState<number | null>(null)
+  const [challengeBounty, setChallengeBounty] = useState(0)
   const metaRef = useRef(meta)
   metaRef.current = meta
   const duelRef = useRef<Duel | null>(null)
@@ -314,6 +317,7 @@ export function App() {
       { aiSamples: r.aiSamples, aiActEvery: r.aiActEvery },
       loadoutOf(metaRef.current),
       r.rivalLoadout,
+      metaRef.current.seedSel,
     )
   }, [seed, run, round])
   duelRef.current = duel
@@ -333,17 +337,22 @@ export function App() {
   const [placedOnce, setPlacedOnce] = useState(false)
   const stormFlashRef = useRef(0)
   const [muted, setMuted] = useState(sfx.muted)
-  const [palette, setPaletteState] = useState<PaletteMode>(() =>
-    localStorage.getItem('god-palette') === 'cfp' ? 'cfp' : 'gfp',
-  )
+  const [showSettings, setShowSettings] = useState(false)
+  const [scheme, setScheme] = useState<PaletteMode>(() => {
+    const stored = localStorage.getItem('god-palette')
+    // Migrate the old binary toggle to the named schemes.
+    if (stored === 'cfp') return 'deuteranopia'
+    if (stored && stored in SCHEMES) return stored as PaletteMode
+    return 'standard'
+  })
   useEffect(() => {
-    setPalette(palette)
+    setPalette(scheme)
     try {
-      localStorage.setItem('god-palette', palette)
+      localStorage.setItem('god-palette', scheme)
     } catch {
       /* private mode */
     }
-  }, [palette])
+  }, [scheme])
   const [announce, setAnnounce] = useState('')
   const [shake, setShake] = useState('')
   const shakeTimer = useRef(0)
@@ -384,6 +393,7 @@ export function App() {
     setSelected(null)
     setSpeedIdx(1)
     setAshEarned(null)
+    setChallengeBounty(0)
     setShowGenome(false)
     flashesRef.current = []
   }, [])
@@ -410,6 +420,7 @@ export function App() {
     setSelected(null)
     setSpeedIdx(1)
     setAshEarned(null)
+    setChallengeBounty(0)
     flashesRef.current = []
   }, [])
 
@@ -535,17 +546,24 @@ export function App() {
       }
       prevInset = duel.state.ringInset
       if (prevStatus === 'running' && duel.status !== 'running') {
-        sfx.play(duel.status === 'won' ? 'win' : 'lose')
-        const runClear = duel.status === 'won' && round === ROUNDS.length
-        const amount = ashFor(duel, runClear)
-        setAshEarned(amount)
-        setMeta((m) => earnAsh(m, amount))
+        const won = duel.status === 'won'
+        sfx.play(won ? 'win' : 'lose')
+        const runClear = won && round === ROUNDS.length
+        const base = ashFor(duel, runClear)
+        // A challenge seed pays a one-time bounty the first time it's cleared.
+        const cseed = seedById(duel.colonySeed)
+        const challengeHit = won && !!cseed.challenge && !metaRef.current.challenges.includes(duel.colonySeed)
+        const bounty = challengeHit ? cseed.challenge!.rewardAsh : 0
+        setChallengeBounty(bounty)
+        setAshEarned(base + bounty)
+        setMeta((m) => {
+          const earned = earnAsh(m, base)
+          return challengeHit ? claimChallenge(earned, duel.colonySeed).meta : earned
+        })
         setAnnounce(
-          duel.status === 'won'
-            ? runClear
-              ? `Run complete — the universe yields. ${amount} ash earned.`
-              : `Round ${round} cleared. ${amount} ash earned.`
-            : `Your colony is dead. Reached round ${round}. ${amount} ash earned.`,
+          won
+            ? `${runClear ? 'Run complete — the universe yields.' : `Round ${round} cleared.`} ${base + bounty} ash earned.${challengeHit ? ` Challenge complete: the ${cseed.name} paid a ${bounty} ash bounty.` : ''}`
+            : `Your colony is dead. Reached round ${round}. ${base} ash earned.`,
         )
       }
       prevStatus = duel.status
@@ -767,6 +785,7 @@ export function App() {
       else if (e.key === 'w' || e.key === 'W') selectCard(1)
       else if (e.key === 'e' || e.key === 'E') selectCard(2)
       else if (e.key === 'Escape') {
+        setShowSettings(false)
         setShowGenome(false)
         setSelected(null)
       } else if (debug && e.key === 'v') duel.forceEnd('won')
@@ -824,6 +843,24 @@ export function App() {
         : `${hud.outcome.toLowerCase().replace(/\.$/, '')} · a full gauntlet, survived`
     : ''
 
+  const cashBreakdown = () => {
+    const bd = ashBreakdown(duel, runClear)
+    if (challengeBounty > 0) {
+      return {
+        rows: [
+          ...bd.rows,
+          {
+            label: 'challenge',
+            detail: `${seedById(duel.colonySeed).name} cleared`,
+            value: challengeBounty,
+          },
+        ],
+        total: bd.total + challengeBounty,
+      }
+    }
+    return bd
+  }
+
   const overlayEl = over && (
     <div className={`overlay ${hud.status}`}>
       <div className="verdict-block">
@@ -833,7 +870,7 @@ export function App() {
       {ashEarned !== null && (
         <CashOut
           key={`${seed}-${round}`}
-          breakdown={ashBreakdown(duel, runClear)}
+          breakdown={cashBreakdown()}
           bank={meta.ash}
           meta={`${hud.gen} generations · ${ROUNDS[round - 1].label}`}
           onGenome={() => setShowGenome(true)}
@@ -889,7 +926,19 @@ export function App() {
       onBuySlot={() => setMeta(buySlot)}
       onBuyGene={(k) => setMeta((m) => buyGene(m, k))}
       onToggleEquip={(k) => setMeta((m) => toggleEquip(m, k))}
+      onBuySeed={(id) => setMeta((m) => buySeed(m, id))}
+      onSelectSeed={(id) => setMeta((m) => selectSeed(m, id))}
       onClose={() => setShowGenome(false)}
+    />
+  )
+
+  const settingsEl = showSettings && (
+    <Settings
+      scheme={scheme}
+      muted={muted}
+      onScheme={setScheme}
+      onMute={() => setMuted(sfx.toggle())}
+      onClose={() => setShowSettings(false)}
     />
   )
 
@@ -921,7 +970,9 @@ export function App() {
   if (layout.mount === 'float') {
     return (
       <div className={`stage mount-float ${shake} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
-        <div className="board-slot">{canvasEl}</div>
+        <div className="board-slot">
+        <div className="board-frame" style={{ width: layout.cssW, height: layout.cssH }}>
+        {canvasEl}
 
         <div className="island isl-tl">
           <div className="frost" aria-hidden="true" />
@@ -954,15 +1005,15 @@ export function App() {
         </div>
 
         <div className="island isl-tr">
-          <FilterSet palette={palette} onToggle={() => setPaletteState((p) => (p === 'gfp' ? 'cfp' : 'gfp'))} />
+          <FilterSet scheme={scheme} onOpen={() => setShowSettings(true)} />
           <div className="vdiv" />
           <button
             className="glyph-btn"
-            aria-label={muted ? 'unmute sound' : 'mute sound'}
-            aria-pressed={muted}
-            onClick={() => setMuted(sfx.toggle())}
+            aria-label="settings"
+            title="settings"
+            onClick={() => setShowSettings(true)}
           >
-            {muted ? '🔇' : '♪'}
+            ⚙
           </button>
           <button
             className={`glyph-btn newrun-island ${armAbandon ? 'armed' : ''}`}
@@ -1023,8 +1074,11 @@ export function App() {
           </CoachStep>
         )}
         {overlayEl}
+        </div>
+        </div>
         {rotateDetent}
         {genomeEl}
+        {settingsEl}
         {srLive}
       </div>
     )
@@ -1150,13 +1204,8 @@ export function App() {
         >
           {muted ? '🔇' : '♪'}
         </button>
-        <button
-          aria-label="swap filter set (colorblind-safe stains)"
-          aria-pressed={palette === 'cfp'}
-          title={palette === 'gfp' ? 'filter set: GFP/mCherry' : 'filter set: CFP/YFP'}
-          onClick={() => setPaletteState((p) => (p === 'gfp' ? 'cfp' : 'gfp'))}
-        >
-          {palette === 'gfp' ? '◐' : '◑'}
+        <button aria-label="settings & vision options" title="settings" onClick={() => setShowSettings(true)}>
+          ⚙
         </button>
         <button
           className={`newrun ${armAbandon ? 'armed' : ''}`}
@@ -1188,6 +1237,7 @@ export function App() {
       {rail}
       {rotateDetent}
       {genomeEl}
+      {settingsEl}
       {srLive}
     </div>
   )

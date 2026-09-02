@@ -52,6 +52,19 @@ plus planner settings. Clear all three and the universe yields (+40 bonus
 ash); die anywhere and the run records how far you got. Each finished round
 pays ash either way.
 
+## Seeds (starting formation)
+
+Before genes, you choose a **seed** — the formation your colony starts as, a
+progression axis of its own (`seeds.ts`). The default is the classic random
+soup; ash unlocks famous Life patterns as starts: the **Pulsar** and
+**Pentadecathlon** (stable oscillators), the **Acorn** (a methuselah that
+erupts for thousands of generations), and the **Gosper Gun** (a generator that
+fires a glider every 30 generations, forever). **Challenge seeds** like the
+**Diehard** — which would vanish in 130 generations of pure Life — are owned
+from the start and pay a one-time ash bounty the first time you clear a round
+from one. Chosen in the genome; applied on your next run; deterministic per
+seed string.
+
 ## The genome (meta-progression)
 
 Finished runs pay **ash** (survival time + victory bonus + final holdings).

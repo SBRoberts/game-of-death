@@ -189,6 +189,33 @@ describe('foresight: nucleus stability', () => {
   })
 })
 
+describe('duel: seeds', () => {
+  it('a chosen seed stamps its exact formation; soup stays procedural', async () => {
+    const { seedById } = await import('../seeds')
+    const acorn = new Duel('seed-test', {}, [], [], 'acorn')
+    const cells = acorn.state.cells
+    let playerCount = 0
+    for (let i = 0; i < cells.length; i++) if (cells[i] === 1) playerCount++
+    expect(playerCount).toBe(seedById('acorn').cells!.length) // exactly the acorn
+
+    const soup = new Duel('seed-test', {}, [], [], 'soup')
+    let soupCount = 0
+    for (let i = 0; i < soup.state.cells.length; i++) if (soup.state.cells[i] === 1) soupCount++
+    expect(soupCount).toBeGreaterThan(seedById('acorn').cells!.length) // soup is denser
+    expect(soup.colonySeed).toBe('soup')
+  })
+
+  it('seeded runs stay deterministic', () => {
+    const a = new Duel('sd', {}, [], [], 'pulsar')
+    const b = new Duel('sd', {}, [], [], 'pulsar')
+    for (let i = 0; i < 200; i++) {
+      a.tick()
+      b.tick()
+    }
+    expect(stateHash(a.state)).toBe(stateHash(b.state))
+  })
+})
+
 describe('duel: genome loadout', () => {
   it('rule genes mutate the player faction; card genes extend the pool', () => {
     const d = new Duel('loadout-test', {}, ['hardy', 'highlife', 'vampire'])

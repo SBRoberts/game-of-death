@@ -47,17 +47,63 @@ const BLOOM_RGB: Record<number, [number, number, number]> = {
 }
 
 // ── faction palettes ───────────────────────────────────────────────────────
-// Two real fluorophore pairs. 'gfp' is the default look; 'cfp' swaps the
-// deuteranopia-hostile green/red pair for CFP-cyan vs YFP-amber (an actual
-// FRET pair) and shifts the radicals to lavender so cyan/blue never collide.
-export type PaletteMode = 'gfp' | 'cfp'
-const PALETTES: Record<PaletteMode, { you: number[]; rival: number[]; radicals: number[] }> = {
-  gfp: { you: [66, 245, 155], rival: [255, 83, 64], radicals: [95, 125, 255] },
-  cfp: { you: [80, 205, 255], rival: [255, 178, 46], radicals: [158, 145, 224] },
+// Real fluorophore sets, one per vision type. Each defines the three factions
+// AND the four placement grades, so poor/fair/good/great stay distinct — and
+// GREAT keeps its striking pop — under every scheme. The value gold and the
+// special-cell hues are shared across schemes (documented tradeoff).
+export type PaletteMode = 'standard' | 'deuteranopia' | 'tritanopia'
+
+interface Scheme {
+  name: string
+  forWhom: string
+  youName: string
+  rivalName: string
+  you: number[]
+  rival: number[]
+  radicals: number[]
+  grades: { poor: string; fair: string; good: string; great: string }
 }
 
+export const SCHEMES: Record<PaletteMode, Scheme> = {
+  standard: {
+    name: 'Standard',
+    forWhom: 'full-spectrum vision',
+    youName: 'GFP',
+    rivalName: 'mCherry',
+    you: [66, 245, 155],
+    rival: [255, 83, 64],
+    radicals: [127, 150, 255],
+    // poor slate → fair periwinkle → good green → great gold: four clear hues.
+    grades: { poor: '#98a2b5', fair: '#9fb4e6', good: '#42f59b', great: '#e8c463' },
+  },
+  deuteranopia: {
+    name: 'Deuteranopia / Protanopia',
+    forWhom: 'red–green color blindness',
+    youName: 'CFP',
+    rivalName: 'YFP',
+    you: [80, 205, 255],
+    rival: [255, 178, 46],
+    radicals: [158, 145, 224],
+    // separated on the blue↔yellow axis these viewers see well.
+    grades: { poor: '#98a2b5', fair: '#7f9fd8', good: '#50cdff', great: '#ffcf3a' },
+  },
+  tritanopia: {
+    name: 'Tritanopia',
+    forWhom: 'blue–yellow color blindness',
+    youName: 'GFP',
+    rivalName: 'mScarlet',
+    you: [74, 222, 128],
+    rival: [255, 99, 72],
+    radicals: [214, 107, 212],
+    // separated on the red↔green axis these viewers see well.
+    grades: { poor: '#b0a0a8', fair: '#d46bd4', good: '#4ade80', great: '#ff8f3a' },
+  },
+}
+
+export const PALETTE_LIST: PaletteMode[] = ['standard', 'deuteranopia', 'tritanopia']
+
 export function setPalette(mode: PaletteMode): void {
-  const p = PALETTES[mode]
+  const p = SCHEMES[mode] ?? SCHEMES.standard
   const rgb = (c: number[]) => `rgb(${c[0]},${c[1]},${c[2]})`
   const rgba = (c: number[], a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`
   const lift = (c: number[]) => c.map((v) => Math.min(255, v + 70))
@@ -77,8 +123,10 @@ export function setPalette(mode: PaletteMode): void {
   BLOOM_RGB[PLAYER] = p.you as [number, number, number]
   BLOOM_RGB[RIVAL] = p.rival as [number, number, number]
   BLOOM_RGB[RADICALS] = p.radicals as [number, number, number]
-  GRADE_COLORS.good = rgb(p.you)
-  GRADE_COLORS.great = rgb(lift(p.you))
+  GRADE_COLORS.poor = p.grades.poor
+  GRADE_COLORS.fair = p.grades.fair
+  GRADE_COLORS.good = p.grades.good
+  GRADE_COLORS.great = p.grades.great
   const root = document.documentElement.style
   root.setProperty('--you', COLORS.player)
   root.setProperty('--rival', COLORS.rival)

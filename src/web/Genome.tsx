@@ -1,4 +1,4 @@
-import { GENES, SLOT_COSTS, geneByKey } from '../sim'
+import { GENES, SEEDS, SLOT_COSTS, geneByKey, seedById, type Seed } from '../sim'
 import { nextSlotCost, upgradeCost, type MetaState } from './meta'
 
 interface GenomeProps {
@@ -6,7 +6,48 @@ interface GenomeProps {
   onBuySlot: () => void
   onBuyGene: (key: string) => void
   onToggleEquip: (key: string) => void
+  onBuySeed: (id: string) => void
+  onSelectSeed: (id: string) => void
   onClose: () => void
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  soup: 'soup',
+  oscillator: 'oscillator',
+  generator: 'generator',
+  methuselah: 'methuselah',
+  challenge: 'challenge',
+}
+
+/** A tiny normalized preview of a seed's starting formation. */
+function SeedGlyph({ seed }: { seed: Seed }) {
+  if (!seed.cells) {
+    // Soup: a scatter of dots, drawn deterministically.
+    const dots = Array.from({ length: 22 }, (_, i) => [(i * 7) % 9, (i * 5) % 6] as const)
+    return (
+      <svg viewBox="0 0 9 6" className="seed-glyph" aria-hidden="true">
+        {dots.map(([x, y], i) => (
+          <circle key={i} cx={x + 0.5} cy={y + 0.5} r={0.4} fill="var(--you)" opacity={0.55} />
+        ))}
+      </svg>
+    )
+  }
+  const w = Math.max(...seed.cells.map(([x]) => x)) + 1
+  const h = Math.max(...seed.cells.map(([, y]) => y)) + 1
+  const s = Math.max(w, h)
+  return (
+    <svg viewBox={`0 0 ${s} ${s}`} className="seed-glyph" aria-hidden="true">
+      {seed.cells.map(([x, y], i) => (
+        <circle
+          key={i}
+          cx={x + (s - w) / 2 + 0.5}
+          cy={y + (s - h) / 2 + 0.5}
+          r={0.42}
+          fill={seed.category === 'challenge' ? 'var(--rival)' : 'var(--you)'}
+        />
+      ))}
+    </svg>
+  )
 }
 
 const ROMAN = ['I', 'II', 'III']
@@ -21,7 +62,15 @@ const CELL_DOTS: Record<string, string> = {
  * five sockets on a connector line, and above them the actual rule string you
  * are playing — B3/S23 mutating into what you've become, additions lit.
  */
-export function Genome({ meta, onBuySlot, onBuyGene, onToggleEquip, onClose }: GenomeProps) {
+export function Genome({
+  meta,
+  onBuySlot,
+  onBuyGene,
+  onToggleEquip,
+  onBuySeed,
+  onSelectSeed,
+  onClose,
+}: GenomeProps) {
   // The live rule readout: base B3/S23 plus every equipped rule-gene's digits.
   const birth = new Set([3])
   const survive = new Set([2, 3])
@@ -43,6 +92,7 @@ export function Genome({ meta, onBuySlot, onBuyGene, onToggleEquip, onClose }: G
       .sort((a, b) => a - b)
       .map((d) => (base.includes(d) ? <span key={d}>{d}</span> : <b key={d}>{d}</b>))
 
+  const selSeed = seedById(meta.seedSel)
   const slotCost = nextSlotCost(meta)
   const sockets = Array.from({ length: SLOT_COSTS.length }, (_, i) => {
     if (i < meta.equipped.length) {
@@ -62,6 +112,19 @@ export function Genome({ meta, onBuySlot, onBuyGene, onToggleEquip, onClose }: G
       onClick={onClose}
     >
       <div className="strand" onClick={(e) => e.stopPropagation()}>
+        <div className="seed-summary">
+          <span className="lbl-xs">STARTING SEED</span>
+          <div className="seed-summary-body">
+            <span className="seed-tile">
+              <SeedGlyph seed={selSeed} />
+            </span>
+            <div className="seed-summary-text">
+              <span className="seed-name">{selSeed.name}</span>
+              <span className="seed-cat">{CATEGORY_LABEL[selSeed.category]}</span>
+            </div>
+          </div>
+        </div>
+
         <div className="rule-readout">
           <span className="lbl-xs">YOUR RULE</span>
           <span className="rule num" aria-label="your current birth and survival rule">
@@ -116,6 +179,53 @@ export function Genome({ meta, onBuySlot, onBuyGene, onToggleEquip, onClose }: G
           <button className="close" aria-label="close genome" onClick={onClose}>
             ✕
           </button>
+        </div>
+
+        <div className="seed-shop">
+          <div className="seed-shop-head">
+            <span className="lbl-sm">SEEDS — YOUR STARTING FORMATION</span>
+          </div>
+          <div className="seed-strip">
+            {SEEDS.map((s) => {
+              const owned = meta.seedsOwned.includes(s.id)
+              const selected = meta.seedSel === s.id
+              const affordable = meta.ash >= s.ashCost
+              const done = s.challenge && meta.challenges.includes(s.id)
+              return (
+                <button
+                  key={s.id}
+                  className={`seed-chip ${selected ? 'selected' : ''} ${owned ? 'owned' : ''} ${
+                    s.category === 'challenge' ? 'challenge' : ''
+                  }`}
+                  onClick={() => (owned ? onSelectSeed(s.id) : affordable && onBuySeed(s.id))}
+                  disabled={!owned && !affordable}
+                  aria-pressed={selected}
+                  aria-label={`${s.name}, ${s.category}. ${s.blurb}${owned ? (selected ? ' Currently selected.' : ' Owned — select.') : ` Unlock for ${s.ashCost} ash.`}`}
+                >
+                  <span className="seed-tile">
+                    <SeedGlyph seed={s} />
+                  </span>
+                  <span className="seed-chip-name">{s.name}</span>
+                  <span className="seed-chip-cat">{CATEGORY_LABEL[s.category]}</span>
+                  <span className="seed-chip-foot">
+                    {selected ? (
+                      <span className="chip-sel">selected ✓</span>
+                    ) : owned ? (
+                      <span className="chip-select">select</span>
+                    ) : (
+                      <span className={`chip-cost ${affordable ? 'ok' : ''}`}>⬡ {s.ashCost}</span>
+                    )}
+                  </span>
+                  {s.challenge && (
+                    <span className={`seed-badge ${done ? 'done' : ''}`}>
+                      {done ? `✓ +${s.challenge.rewardAsh}` : `⬡ ${s.challenge.rewardAsh}`}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <div className="seed-blurb">{selSeed.blurb}</div>
         </div>
 
         <div className="gene-grid">

@@ -2,6 +2,12 @@
 
 Roguelike duel on Conway's Game of Life. See README.md for design + roadmap.
 
+Stack decision (settled): TypeScript end-to-end, long-term. Do not introduce
+Rust/WASM (or any second language) unless a trigger in README's architecture
+section actually fires; the sim boundary keeps that port mechanical later.
+Balance philosophy: top gene rungs may exceed the fair band by design —
+price them in ash (jackpot tier), don't flatten them.
+
 ## Hard constraints
 
 - `src/sim/` stays **pure and deterministic**: no DOM, no `Date.now()`, no

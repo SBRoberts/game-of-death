@@ -6,6 +6,8 @@ edges of the universe.
 
 **Play:** `npm install && npm run dev` → http://localhost:5173
 
+![A duel in progress: GFP-green colony vs mCherry-red rival across a DAPI-blue debris field](docs/screenshot-battle.png)
+
 ## How it plays
 
 Two colonies of B3/S23 life share one board with a neutral **wilds** debris
@@ -115,16 +117,27 @@ With gene LEVELS, the sweep tests all 22 rungs. Findings and policy:
   the sampler is now reach-aware so Ranger participates. Their real value
   is human tempo and options — known policy blindness.
 
-## Architecture
+## Architecture & the long-term stack
 
 ```
 src/sim/      Pure, deterministic, dependency-free TypeScript.
-              No DOM, no Date.now, no Math.random. This is the future
-              Rust/WASM boundary — nothing in here may import outward.
+              No DOM, no Date.now, no Math.random. Nothing in here may
+              import outward.
 src/web/      Vite + React chrome. The board is ONE canvas, never React.
-src/harness/  Headless self-play (npm run harness). The seed of the
-              balance harness: when genes exist, winrates get flagged here.
+src/harness/  Headless proof + balance harnesses; the gene sweep fans out
+              across CPU cores (a full 22-rung audit runs in ~2 minutes).
 ```
+
+**This is the long-term stack: TypeScript end-to-end.** The sim sits behind
+a narrow boundary that was designed as a future Rust/WASM seam, and the
+decision is to *keep the door open, not walk through it*: the browser runs
+10k cells at 60fps with headroom to quadruple, and harness throughput —
+the one trigger that fired — is answered by process-parallel sweeps at a
+tenth of the complexity a second language would add. Revisit Rust/WASM
+only if: boards grow past ~500×500, per-cell rule fields land, or sweep
+confidence needs another order of magnitude. The port stays mechanical:
+`engine.ts` is ~250 stable lines with 27 ground-truth tests and exact
+determinism hashes to verify any reimplementation against.
 
 ## Design laws
 

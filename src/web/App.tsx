@@ -3,6 +3,7 @@ import {
   Duel,
   PLAYER,
   RIVAL,
+  ROUNDS,
   WILDS,
   TUNING,
   impactScore,
@@ -66,13 +67,23 @@ function aimRotation(patternId: string): number {
 export function App() {
   const [seed, setSeed] = useState(initialSeed)
   const [run, setRun] = useState(0)
+  const [round, setRound] = useState(1)
   const [meta, setMeta] = useState(loadMeta)
   const [showGenome, setShowGenome] = useState(false)
   const [ashEarned, setAshEarned] = useState<number | null>(null)
   const metaRef = useRef(meta)
   metaRef.current = meta
+  const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), [])
   // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
-  const duel = useMemo(() => new Duel(seed, {}, metaRef.current.equipped), [seed, run])
+  const duel = useMemo(() => {
+    const r = ROUNDS[round - 1]
+    return new Duel(
+      round === 1 ? seed : `${seed}-r${round}`,
+      { aiSamples: r.aiSamples, aiActEvery: r.aiActEvery },
+      metaRef.current.equipped,
+      r.rivalLoadout,
+    )
+  }, [seed, run, round])
 
   const [speedIdx, setSpeedIdx] = useState(1)
   const [selected, setSelected] = useState<number | null>(null)
@@ -97,10 +108,19 @@ export function App() {
   const newRun = useCallback(() => {
     setSeed(randomSeed())
     setRun((r) => r + 1)
+    setRound(1)
     setSelected(null)
     setSpeedIdx(1)
     setAshEarned(null)
     setShowGenome(false)
+    flashesRef.current = []
+  }, [])
+
+  const nextRound = useCallback(() => {
+    setRound((r) => Math.min(r + 1, ROUNDS.length))
+    setSelected(null)
+    setSpeedIdx(1)
+    setAshEarned(null)
     flashesRef.current = []
   }, [])
 
@@ -152,7 +172,8 @@ export function App() {
       prevInset = duel.state.ringInset
       if (prevStatus === 'running' && duel.status !== 'running') {
         sfx.play(duel.status === 'won' ? 'win' : 'lose')
-        const amount = ashFor(duel)
+        const runClear = duel.status === 'won' && round === ROUNDS.length
+        const amount = ashFor(duel) + (runClear ? 40 : 0)
         setAshEarned(amount)
         setMeta((m) => earnAsh(m, amount))
       }
@@ -296,10 +317,12 @@ export function App() {
       else if (e.key === 'r' || e.key === 'R') setRotation((r) => (r + 1) % 4)
       else if (e.key === 'n' || e.key === 'N') newRun()
       else if (e.key === 'Escape') setSelected(null)
+      else if (debug && e.key === 'v') duel.forceEnd('won')
+      else if (debug && e.key === 'x') duel.forceEnd('lost')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePause, newRun])
+  }, [togglePause, newRun, debug, duel])
 
   const stormLabel =
     hud === null ? '' : hud.inset > 0 ? `storm +${hud.inset}` : `storm in ${hud.stormEta}g`
@@ -309,6 +332,9 @@ export function App() {
       <header className="hud">
         <h1>THE GAME OF DEATH</h1>
         <div className="hud-stats">
+          <span className="stat round">
+            round {round}/{ROUNDS.length} · {ROUNDS[round - 1].label}
+          </span>
           <span className="stat">gen {hud?.gen ?? 0}</span>
           <span className="stat biomass">
             ⬢ {hud?.biomass ?? 0} <em>+{hud?.rate ?? '0.0'}/s</em>
@@ -361,8 +387,20 @@ export function App() {
         />
         {hud && hud.status !== 'running' && (
           <div className={`overlay ${hud.status}`}>
-            <div className="verdict">{hud.status === 'won' ? 'VICTORY' : 'DEATH'}</div>
-            <div className="outcome">{hud.outcome}</div>
+            <div className="verdict">
+              {hud.status !== 'won'
+                ? 'DEATH'
+                : round < ROUNDS.length
+                  ? `ROUND ${round} CLEARED`
+                  : 'THE UNIVERSE YIELDS'}
+            </div>
+            <div className="outcome">
+              {hud.status !== 'won'
+                ? `${hud.outcome} You reached round ${round} of ${ROUNDS.length}.`
+                : round < ROUNDS.length
+                  ? `${hud.outcome} Next: ${ROUNDS[round].label}.`
+                  : `${hud.outcome} A full gauntlet, survived.`}
+            </div>
             {ashEarned !== null && (
               <div className="ash-earned">
                 +{ashEarned} ash <span>· ⬡ {meta.ash} total</span>
@@ -370,7 +408,15 @@ export function App() {
             )}
             <div className="overlay-actions">
               <button onClick={() => setShowGenome(true)}>genome</button>
-              <button onClick={newRun}>new run [n]</button>
+              {hud.status === 'won' && round < ROUNDS.length ? (
+                <button className="primary" onClick={nextRound}>
+                  next round →
+                </button>
+              ) : (
+                <button className="primary" onClick={newRun}>
+                  new run [n]
+                </button>
+              )}
             </div>
           </div>
         )}

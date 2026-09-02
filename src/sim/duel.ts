@@ -33,26 +33,42 @@ export class Duel {
   readonly loadout: readonly string[]
   /** The player's draw pool: base deck plus unlocked special cards. */
   readonly playerPool: readonly Pattern[]
+  /** The rival's pool — grows with its own loadout in later rounds. */
+  readonly rivalPool: readonly Pattern[]
 
   private drawRng: Rng
   private rivalRng: Rng
 
-  constructor(seed: string, overrides: Partial<Tuning> = {}, loadout: readonly string[] = []) {
+  constructor(
+    seed: string,
+    overrides: Partial<Tuning> = {},
+    loadout: readonly string[] = [],
+    rivalLoadout: readonly string[] = [],
+  ) {
     this.seed = seed
     this.loadout = loadout
-    const genes = loadout.map(geneByKey)
 
-    let t = { ...TUNING, ...overrides }
-    const playerRule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
-    const pool: Pattern[] = [...PATTERNS]
-    for (const g of genes) {
-      if (g.addSurvive) playerRule.survive |= mask(...g.addSurvive)
-      if (g.addBirth) playerRule.birth |= mask(...g.addBirth)
-      if (g.tuning) t = { ...t, ...g.tuning }
-      if (g.card) pool.push(patternById(g.card))
+    // A faction's genes build its rule and pool; only the PLAYER's genes may
+    // touch tuning (economy/reach are global knobs, so rival escalation
+    // sticks to rules and cards).
+    const build = (keys: readonly string[]) => {
+      const rule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
+      const pool: Pattern[] = [...PATTERNS]
+      for (const g of keys.map(geneByKey)) {
+        if (g.addSurvive) rule.survive |= mask(...g.addSurvive)
+        if (g.addBirth) rule.birth |= mask(...g.addBirth)
+        if (g.card) pool.push(patternById(g.card))
+      }
+      return { rule, pool }
     }
+    const player = build(loadout)
+    const rival = build(rivalLoadout)
+    let t = { ...TUNING, ...overrides }
+    for (const g of loadout.map(geneByKey)) if (g.tuning) t = { ...t, ...g.tuning }
     this.t = t
-    this.playerPool = pool
+    this.playerPool = player.pool
+    this.rivalPool = rival.pool
+    const playerRule = player.rule
 
     this.state = createState({
       width: this.t.width,
@@ -60,7 +76,7 @@ export class Duel {
       factions: [
         { name: 'dead', rule: LIFE },
         { name: 'you', rule: playerRule },
-        { name: 'rival', rule: LIFE },
+        { name: 'rival', rule: rival.rule },
         { name: 'wilds', rule: LIFE },
       ],
       flankingMargin: this.t.flankingMargin,
@@ -116,6 +132,18 @@ export class Duel {
 
   private draw(): string {
     return this.playerPool[pickInt(this.drawRng, this.playerPool.length)].id
+  }
+
+  /** Draw pool a faction's policy may buy from. */
+  poolFor(faction: number): readonly Pattern[] {
+    if (faction === PLAYER) return this.playerPool
+    if (faction === RIVAL) return this.rivalPool
+    return PATTERNS
+  }
+
+  /** Test/dev hook: end the duel now (wired to a key only in ?debug mode). */
+  forceEnd(status: 'won' | 'lost'): void {
+    if (this.status === 'running') this.finish(status, 'debug')
   }
 
   get maxInset(): number {

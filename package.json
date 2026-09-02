@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "harness": "tsx src/harness/selfplay.ts"
+    "harness": "tsx src/harness/selfplay.ts",
+    "balance": "tsx src/harness/genebalance.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

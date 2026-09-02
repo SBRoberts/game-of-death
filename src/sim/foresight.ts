@@ -21,10 +21,11 @@ export function projectImpact(
   cells: ReadonlyArray<readonly [number, number]>,
   gens: number,
   insetAt?: (gen: number) => number,
+  cellType = 0,
 ): Impact {
   const base = cloneState(s)
   const alt = cloneState(s)
-  setCells(alt, faction, cells)
+  setCells(alt, faction, cells, cellType)
   for (let k = 0; k < gens; k++) {
     if (insetAt) {
       const inset = insetAt(base.gen + 1)

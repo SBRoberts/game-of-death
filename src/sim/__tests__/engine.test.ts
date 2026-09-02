@@ -177,6 +177,15 @@ describe('duel: genome loadout', () => {
     expect(vanilla.playerPool.some((p) => p.id === 'vampire')).toBe(false)
   })
 
+  it('rival loadout mutates faction 2 and its pool, not the player', () => {
+    const d = new Duel('rival-loadout', {}, [], ['hardy', 'vampire'])
+    expect(d.state.cfg.factions[2].rule.survive & mask(4)).toBeTruthy()
+    expect(d.state.cfg.factions[1].rule.survive & mask(4)).toBeFalsy()
+    expect(d.rivalPool.some((p) => p.id === 'vampire')).toBe(true)
+    expect(d.playerPool.some((p) => p.id === 'vampire')).toBe(false)
+    expect(d.poolFor(2).some((p) => p.id === 'vampire')).toBe(true)
+  })
+
   it('loadout runs stay deterministic', () => {
     const a = new Duel('loadout-det', {}, ['hardy', 'martyr'])
     const b = new Duel('loadout-det', {}, ['hardy', 'martyr'])

@@ -39,6 +39,15 @@ You interact through three levers:
 Runs are fully deterministic per seed (`?seed=...` in the URL). Same seed, same
 actions, same universe, every time.
 
+## The gauntlet
+
+A run is three rounds against an escalating rival — **the neighbor** (vanilla),
+**the veteran** (Hardy gene, sharper planner), **elder blood** (Hardy +
+Vampire, sharpest planner). Rounds are data (`rounds.ts`): a rival loadout
+plus planner settings. Clear all three and the universe yields (+40 bonus
+ash); die anywhere and the run records how far you got. Each finished round
+pays ash either way.
+
 ## The genome (meta-progression)
 
 Finished runs pay **ash** (survival time + victory bonus + final holdings).
@@ -121,5 +130,6 @@ src/harness/  Headless self-play (npm run harness). The seed of the
 | `npm run dev`       | Dev server                                  |
 | `npm test`          | Sim ground-truth tests (vitest)             |
 | `npm run harness`   | Policy-matchup proof + determinism audit    |
+| `npm run balance`   | Gene balance sweep (flags <35% / >65% winrates) |
 | `npm run typecheck` | Strict TS across sim/web/harness            |
 | `npm run build`     | Static production build (itch.io-shippable) |

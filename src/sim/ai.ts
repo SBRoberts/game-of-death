@@ -9,7 +9,7 @@
 
 import type { Duel } from './duel'
 import { projectImpact, type Impact } from './foresight'
-import { PATTERNS, rotateDir, type Pattern } from './patterns'
+import { rotateDir, type Pattern } from './patterns'
 import { pickInt, type Rng } from './rng'
 
 /**
@@ -74,7 +74,7 @@ function aimRot(dir: readonly [number, number], tx: number, ty: number): number 
 }
 
 export function aiAct(duel: Duel, faction: number, rng: Rng, target: number): void {
-  const affordable = PATTERNS.filter((p) => p.cost <= duel.biomass[faction])
+  const affordable = duel.poolFor(faction).filter((p) => p.cost <= duel.biomass[faction])
   if (affordable.length === 0) return
   const pattern = affordable[pickInt(rng, affordable.length)]
   const { own, cx, cy } = scan(duel, faction, target)
@@ -107,7 +107,7 @@ export function smartAct(
   samples: number,
   horizon: number,
 ): void {
-  const affordable = PATTERNS.filter((p) => p.cost <= duel.biomass[faction])
+  const affordable = duel.poolFor(faction).filter((p) => p.cost <= duel.biomass[faction])
   if (affordable.length === 0) return
   const { own, cx, cy } = scan(duel, faction, target)
   if (own.length === 0) return
@@ -128,7 +128,14 @@ export function smartAct(
     const cells = duel.patternCells(pattern, ox, oy, rot)
     if (!duel.canPlace(faction, cells, pattern.clearance)) continue
 
-    const impact = projectImpact(s, faction, cells, horizon, (g) => duel.insetAt(g))
+    const impact = projectImpact(
+      s,
+      faction,
+      cells,
+      horizon,
+      (g) => duel.insetAt(g),
+      pattern.cellType ?? 0,
+    )
     const score = impactScore(s.cells, impact, target, pattern.cost)
     if (!best || score > best.score) best = { pattern, ox, oy, rot, score }
   }

@@ -121,6 +121,31 @@ describe('Duel chest draft', () => {
   })
 })
 
+describe('shop: seeded rarity-tiered stock', () => {
+  it('is deterministic and offers distinct, priced items', async () => {
+    const { rollShop } = await import('../shop')
+    const a = rollShop('shop-seed', 1, 0, [])
+    const b = rollShop('shop-seed', 1, 0, [])
+    expect(a).toEqual(b)
+    expect(a.length).toBeGreaterThan(0)
+    expect(new Set(a.map((i) => i.key)).size).toBe(a.length)
+    for (const it of a) expect(it.price).toBeGreaterThan(0)
+  })
+
+  it('round 1 sells no legendaries; deeper rounds admit warpier stock', async () => {
+    const { rollShop } = await import('../shop')
+    const r1 = rollShop('shop-seed', 1, 0, [])
+    expect(r1.every((i) => i.rarity !== 'legendary')).toBe(true)
+    // across a handful of round-2 rolls, warpier rarities show up
+    let sawWarpier = false
+    for (let k = 0; k < 8; k++) {
+      const r2 = rollShop('shop-seed', 2, k, [])
+      if (r2.some((i) => i.rarity === 'rare' || i.rarity === 'epic')) sawWarpier = true
+    }
+    expect(sawWarpier).toBe(true)
+  })
+})
+
 describe('Duel harvest counters', () => {
   it('start at zero and never go negative while ticking', () => {
     const d = new Duel('harvest-seed', {}, [])

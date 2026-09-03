@@ -33,6 +33,7 @@ import { Hand } from './Hand'
 import { Genome } from './Genome'
 import { CashOut } from './CashOut'
 import { ChestPicker } from './ChestPicker'
+import { Shop } from './Shop'
 import { Settings } from './Settings'
 import { TitleScreen } from './TitleScreen'
 import { HowTo } from './HowTo'
@@ -53,7 +54,7 @@ import {
   toggleEquip,
   upgradeCost,
 } from './meta'
-import { seedById, type GeneChoice, type ChestOption } from '../sim'
+import { seedById, rollShop, shopRerollCost, type GeneChoice, type ChestOption, type ShopItem } from '../sim'
 
 const PLACE_SOUND: Record<string, SfxName> = {
   hold: 'place_hold',
@@ -333,6 +334,9 @@ export function App() {
   // Every run's BASE loadout is now empty — no start-of-run power; the board
   // opens pure B3/S23 and only strays as you draft, gated by the round's warp cap.
   const runLoadoutRef = useRef<GeneChoice[]>([])
+  // PLASM harvested this run, spent in the between-round shop. Persists across
+  // the 3 rounds, wiped on a new run.
+  const runPlasmRef = useRef(0)
   const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), [])
   const layout = useLayout()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
@@ -448,6 +452,7 @@ export function App() {
 
   const newRun = useCallback(() => {
     runLoadoutRef.current = [] // wipe the drafted build — every run starts pure
+    runPlasmRef.current = 0
     setSeed(randomSeed())
     setRun((r) => r + 1)
     setRound(1)
@@ -549,6 +554,46 @@ export function App() {
     setChestNonce((n) => n + 1)
     if (d.pendingChests <= 0) setChestOpen(false)
   }, [])
+
+  // ── between-round shop: spend PLASM to choose what strays next round ───────
+  const [shopOpen, setShopOpen] = useState(false)
+  const [shopRerolls, setShopRerolls] = useState(0)
+  const [shopStock, setShopStock] = useState<ShopItem[]>([])
+  const [shopBought, setShopBought] = useState<Set<string>>(new Set())
+  const [, bumpShop] = useState(0)
+  const mergeDraft = (key: string, level: number) => {
+    const arr = runLoadoutRef.current
+    const i = arr.findIndex((x) => (typeof x === 'string' ? x : x.key) === key)
+    if (i >= 0) arr[i] = { key, level }
+    else arr.push({ key, level })
+  }
+  const openShop = useCallback(() => {
+    setShopRerolls(0)
+    setShopBought(new Set())
+    setShopStock(rollShop(seed, round, 0, runLoadoutRef.current))
+    setShopOpen(true)
+  }, [seed, round])
+  const buyItem = useCallback(
+    (it: ShopItem) => {
+      if (runPlasmRef.current < it.price || shopBought.has(it.key)) return
+      runPlasmRef.current -= it.price
+      mergeDraft(it.key, it.level)
+      setShopBought((s) => new Set(s).add(it.key))
+      sfx.play(it.warp >= 3 ? 'newbest' : 'place_grow')
+      bumpShop((n) => n + 1)
+    },
+    [shopBought],
+  )
+  const rerollShop = useCallback(() => {
+    const cost = shopRerollCost(shopRerolls)
+    if (runPlasmRef.current < cost) return
+    runPlasmRef.current -= cost
+    const r = shopRerolls + 1
+    setShopRerolls(r)
+    setShopBought(new Set())
+    setShopStock(rollShop(seed, round, r, runLoadoutRef.current))
+    sfx.play('select')
+  }, [seed, round, shopRerolls])
 
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
@@ -723,6 +768,9 @@ export function App() {
         const won = duel.status === 'won'
         sfx.play(won ? 'win' : 'lose')
         freeze(150, 1) // the climax lands on a held frame
+        // Bank the round's harvest into the run wallet for the between-round shop.
+        runPlasmRef.current += duel.plasm
+        setChestOpen(false)
         const runClear = won && round === ROUNDS.length
         // A round deeper than you've ever reached pays a frontier bounty — read
         // the pre-update record so win and loss are scored the same way.
@@ -989,7 +1037,10 @@ export function App() {
         setSelected(null)
       } else if (debug && e.key === 'v') duel.forceEnd('won')
       else if (debug && e.key === 'x') duel.forceEnd('lost')
-      else if (debug && e.key === 'b') duel.pendingChests++ // grant a test chest
+      else if (debug && e.key === 'b') {
+        duel.pendingChests++ // grant a test chest + harvest
+        duel.plasm += 30
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1081,7 +1132,7 @@ export function App() {
           onGenome={() => setShowGenome(true)}
           primary={
             hud.status === 'won' && round < ROUNDS.length
-              ? { label: 'NEXT ROUND →', onClick: nextRound }
+              ? { label: 'TO THE SHOP →', onClick: openShop }
               : { label: 'NEW RUN [N]', onClick: newRun }
           }
         />
@@ -1118,6 +1169,25 @@ export function App() {
         onClose={() => setChestOpen(false)}
       />
     ) : null
+  const shopEl = shopOpen ? (
+    <div className="shop-backdrop">
+      <Shop
+        stock={shopStock}
+        plasm={Math.floor(runPlasmRef.current)}
+        rerollCost={shopRerollCost(shopRerolls)}
+        nextCap={ROUNDS[round]?.warpCap ?? Infinity}
+        bought={shopBought}
+        nextRoundLabel={ROUNDS[round]?.label ?? ''}
+        round={round + 1}
+        onBuy={buyItem}
+        onReroll={rerollShop}
+        onContinue={() => {
+          setShopOpen(false)
+          nextRound()
+        }}
+      />
+    </div>
+  ) : null
 
   // ── title screen ─────────────────────────────────────────────────────────
   if (screen === 'title') {
@@ -1331,6 +1401,7 @@ export function App() {
         {overlayEl}
         {chestPill}
         {chestEl}
+        {shopEl}
         </div>
         </div>
         {rotateDetent}
@@ -1492,6 +1563,7 @@ export function App() {
           {overlayEl}
         {chestPill}
         {chestEl}
+        {shopEl}
         </div>
         {!narrow && footerStrip}
       </div>

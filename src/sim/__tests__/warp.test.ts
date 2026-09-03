@@ -83,6 +83,44 @@ describe('Duel.rebuildPlayer: in-run re-derivation', () => {
   })
 })
 
+describe('Duel chest draft', () => {
+  it('offers up to 3 distinct upgrades, deterministically', () => {
+    const d = new Duel('draft-seed', {}, [])
+    d.warpCap = 4
+    const a = d.chestOptions(0)
+    const b = d.chestOptions(0)
+    expect(a.length).toBeGreaterThan(0)
+    expect(a.length).toBeLessThanOrEqual(3)
+    expect(new Set(a.map((o) => o.key)).size).toBe(a.length) // distinct keys
+    expect(a).toEqual(b) // same index -> same offer (deterministic)
+  })
+
+  it('round 1 (cap 0) always includes an active-now (warp-0) option', () => {
+    const d = new Duel('draft-seed', {}, [])
+    d.warpCap = 0
+    for (let i = 0; i < 5; i++) {
+      const opts = d.chestOptions(i)
+      expect(opts.some((o) => o.activeNow && o.warp === 0)).toBe(true)
+      // a rule gene shows up as dormant (activates when the cap rises)
+      expect(opts.every((o) => o.warp === 0 || !o.activeNow)).toBe(true)
+    }
+  })
+
+  it('picking levels the gene, spends the chest, and re-derives the player', () => {
+    const d = new Duel('draft-seed', {}, [])
+    d.warpCap = 10
+    d.pendingChests = 2
+    d.applyChestPick({ key: 'hardy', level: 1 })
+    expect(d.pendingChests).toBe(1)
+    expect(d.chestIndex).toBe(1)
+    expect(d.state.cfg.factions[PLAYER].rule.survive & (1 << 8)).toBeTruthy()
+    // next offer should advance hardy to level 2 if it comes up
+    d.applyChestPick({ key: 'hardy', level: 2 })
+    expect(d.runLoadout.filter((c) => (typeof c === 'string' ? c : c.key) === 'hardy').length).toBe(1)
+    expect(d.playerWarp).toBe(2) // hardy L2, not L1+L2 double-counted
+  })
+})
+
 describe('Duel harvest counters', () => {
   it('start at zero and never go negative while ticking', () => {
     const d = new Duel('harvest-seed', {}, [])

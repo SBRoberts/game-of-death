@@ -7,6 +7,7 @@
 import { createState, setCells, step } from './engine'
 import { PATTERNS, RADICAL_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
 import { geneByKey, normalizeChoice, type GeneChoice } from './genes'
+import { geneChoiceWarp, rarityOf, type Rarity } from './warp'
 import { seedById } from './seeds'
 import {
   CHAIN_ARM_GENS,
@@ -21,7 +22,6 @@ import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, mask, type Rule, type SimState } from './types'
 import { aiAct, smartAct } from './ai'
-import { geneChoiceWarp } from './warp'
 
 export const PLAYER = 1
 export const RIVAL = 2
@@ -41,6 +41,23 @@ export interface FoldResult {
 }
 
 const ROMAN = ['', '', ' II', ' III']
+
+/** One offered upgrade in a chest draft. */
+export interface ChestOption {
+  key: string
+  level: number
+  name: string
+  desc: string
+  warp: number
+  rarity: Rarity
+  /** True if it fits under this round's warp cap right now; else it activates
+   *  a later round when the cap rises (shown with an "activates later" tag). */
+  activeNow: boolean
+}
+
+/** Genes offered by in-run chests. Thrifty is excluded — it mints biomass;
+ *  Metabolism (an income rate) is its law-clean replacement. */
+export const DRAFT_GENES = ['metabolism', 'ranger', 'hardy', 'highlife', 'elder', 'vampire', 'martyr']
 
 /**
  * Fold a set of gene choices into a faction's rule/pool/economy. Pure and
@@ -71,6 +88,7 @@ export function foldLoadout(
     if (g.addBirth) rule.birth |= mask(...g.addBirth)
     if (g.radius !== undefined) radius = g.radius
     if (g.startBonus) startBonus += g.startBonus
+    if (g.addIncomeScale) incomeScale += g.addIncomeScale
     if (g.card) {
       const base = patternById(g.card)
       pool.push({
@@ -119,6 +137,8 @@ export class Duel {
   plasm = 0
   /** Chests earned but not yet opened (the HUD shows this count). */
   pendingChests = 0
+  /** How many chests have been opened this round — seeds the next offer. */
+  chestIndex = 0
   private chestMeter = 0
 
   // ── The Chain: emergent-cascade scoring (see chain.ts) ──────────────────
@@ -223,6 +243,75 @@ export class Duel {
   /** Summed active warp of the player's current build (drives rarity + glow). */
   get playerWarp(): number {
     return foldLoadout(this.t, [...this.loadout, ...this.runLoadout], this.warpCap).activeWarp
+  }
+
+  /** The current level of a drafted gene (0 = not yet owned this run). */
+  private runLevel(key: string): number {
+    let lvl = 0
+    for (const c of this.runLoadout) {
+      const n = normalizeChoice(c)
+      if (n.key === key) lvl = Math.max(lvl, n.level)
+    }
+    return lvl
+  }
+
+  /**
+   * The pick-1-of-3 offered by the chest at the given index. Deterministic
+   * (seeded by seed+round+index), and dependent only on the drafted build so
+   * far — so a run replays byte-identically. Each option is the NEXT rung of a
+   * draftable gene; at least one is active under the current cap so every chest
+   * has immediate value, the rest activate as later rounds raise the cap.
+   */
+  chestOptions(index: number): ChestOption[] {
+    const rng = rngFrom(this.seed, `chest:${index}`)
+    const nowWarp = this.playerWarp
+    const toOption = (key: string, level: number): ChestOption => {
+      const gene = geneByKey(key)
+      const g = gene.levels[level - 1]
+      const w = geneChoiceWarp({ key, level })
+      return {
+        key,
+        level,
+        name: gene.name + ROMAN[level],
+        desc: g.desc,
+        warp: w,
+        rarity: rarityOf(w),
+        activeNow: nowWarp + w <= this.warpCap,
+      }
+    }
+    // Candidates = the next un-maxed rung of every draftable gene.
+    const cands = DRAFT_GENES.map((key) => ({ key, level: this.runLevel(key) + 1 }))
+      .filter((c) => c.level <= geneByKey(c.key).levels.length)
+      .map((c) => toOption(c.key, c.level))
+    // Deterministic Fisher-Yates shuffle.
+    for (let i = cands.length - 1; i > 0; i--) {
+      const j = pickInt(rng, i + 1)
+      ;[cands[i], cands[j]] = [cands[j], cands[i]]
+    }
+    // Lead with an active-now option (immediate value), then fill to 3 distinct.
+    const active = cands.filter((c) => c.activeNow)
+    const picks: ChestOption[] = active.length ? [active[0]] : []
+    for (const c of cands) {
+      if (picks.length >= 3) break
+      if (!picks.some((p) => p.key === c.key)) picks.push(c)
+    }
+    return picks
+  }
+
+  /**
+   * Apply a chosen chest option: level the gene in the run build (in place, so
+   * it persists across rounds), spend the chest, advance the offer stream, and
+   * re-derive the player under the current cap. The pick is a recorded action,
+   * like playCard — so (seed, actions) replays exactly.
+   */
+  applyChestPick(choice: GeneChoice): void {
+    const c = normalizeChoice(choice)
+    const i = this.runLoadout.findIndex((x) => normalizeChoice(x).key === c.key)
+    if (i >= 0) this.runLoadout[i] = c
+    else this.runLoadout.push(c)
+    this.pendingChests = Math.max(0, this.pendingChests - 1)
+    this.chestIndex++
+    this.rebuildPlayer()
   }
 
   /** Neutral debris field in the midfield: cover, obstacles, capturable matter. */

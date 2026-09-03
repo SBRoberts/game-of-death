@@ -32,6 +32,7 @@ import { CHAIN_CELEBRATE_TIER, CHAIN_TIERS, chainAshValue } from '../sim'
 import { Hand } from './Hand'
 import { Genome } from './Genome'
 import { CashOut } from './CashOut'
+import { ChestPicker } from './ChestPicker'
 import { Settings } from './Settings'
 import { TitleScreen } from './TitleScreen'
 import { HowTo } from './HowTo'
@@ -52,7 +53,7 @@ import {
   toggleEquip,
   upgradeCost,
 } from './meta'
-import { seedById, type GeneChoice } from '../sim'
+import { seedById, type GeneChoice, type ChestOption } from '../sim'
 
 const PLACE_SOUND: Record<string, SfxName> = {
   hold: 'place_hold',
@@ -86,6 +87,9 @@ interface Hud {
   stormEta: number
   status: Duel['status']
   outcome: string
+  pendingChests: number
+  plasm: number
+  warp: number
 }
 
 const PROBLEM_TEXT: Record<string, string> = {
@@ -525,6 +529,27 @@ export function App() {
     } else sfx.play('invalid')
   }, [])
 
+  // ── in-run chests: crack a plasmid, splice a mutagen ──────────────────────
+  const [chestOpen, setChestOpen] = useState(false)
+  const [, setChestNonce] = useState(0) // bump to recompute the offer after a pick
+  const openChest = useCallback(() => {
+    const d = duelRef.current
+    if (d && d.pendingChests > 0 && d.status === 'running') {
+      setSpeedIdx(0) // hold time while you choose
+      setChestOpen(true)
+      sfx.play('select')
+    }
+  }, [])
+  const pickChest = useCallback((opt: ChestOption) => {
+    const d = duelRef.current
+    if (!d) return
+    d.applyChestPick({ key: opt.key, level: opt.level })
+    sfx.play(opt.warp >= 3 ? 'newbest' : 'place_grow')
+    punchRef.current = Math.max(punchRef.current, 0.7)
+    setChestNonce((n) => n + 1)
+    if (d.pendingChests <= 0) setChestOpen(false)
+  }, [])
+
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
     const canvas = canvasRef.current
@@ -808,6 +833,9 @@ export function App() {
           stormEta: Math.max(0, duel.t.ringGrace - s.gen),
           status: duel.status,
           outcome: duel.outcome,
+          pendingChests: duel.pendingChests,
+          plasm: Math.floor(duel.plasm),
+          warp: duel.playerWarp,
         })
       }
       raf = requestAnimationFrame(frame)
@@ -954,16 +982,18 @@ export function App() {
       else if (e.key === 'q' || e.key === 'Q') selectCard(0)
       else if (e.key === 'w' || e.key === 'W') selectCard(1)
       else if (e.key === 'e' || e.key === 'E') selectCard(2)
+      else if (e.key === 'c' || e.key === 'C') openChest()
       else if (e.key === 'Escape') {
         setShowSettings(false)
         setShowGenome(false)
         setSelected(null)
       } else if (debug && e.key === 'v') duel.forceEnd('won')
       else if (debug && e.key === 'x') duel.forceEnd('lost')
+      else if (debug && e.key === 'b') duel.pendingChests++ // grant a test chest
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePause, requestNewRun, debug, duel, selectCard])
+  }, [togglePause, requestNewRun, debug, duel, selectCard, openChest])
 
   // ── derived bits shared by the mounts ────────────────────────────────────
   const over = hud !== null && hud.status !== 'running'
@@ -1058,6 +1088,36 @@ export function App() {
       )}
     </div>
   )
+
+  // A pulsing prompt while a plasmid chest is waiting, and the picker itself.
+  const chestPill =
+    (hud?.pendingChests ?? 0) > 0 && !over ? (
+      <button
+        className="chest-pill"
+        onClick={openChest}
+        aria-label={`${hud?.pendingChests} plasmid chest${(hud?.pendingChests ?? 0) > 1 ? 's' : ''} ready — open`}
+      >
+        <span className="chest-pill-glyph" aria-hidden="true">
+          ⬢
+        </span>
+        <span className="chest-pill-text">
+          PLASMID{(hud?.pendingChests ?? 0) > 1 ? ` ×${hud?.pendingChests}` : ' READY'}
+        </span>
+        <span className="chest-pill-key" aria-hidden="true">
+          C
+        </span>
+      </button>
+    ) : null
+  const chestEl =
+    chestOpen && duel.pendingChests > 0 ? (
+      <ChestPicker
+        key={duel.chestIndex}
+        options={duel.chestOptions(duel.chestIndex)}
+        remaining={duel.pendingChests}
+        onPick={pickChest}
+        onClose={() => setChestOpen(false)}
+      />
+    ) : null
 
   // ── title screen ─────────────────────────────────────────────────────────
   if (screen === 'title') {
@@ -1269,6 +1329,8 @@ export function App() {
           </CoachStep>
         )}
         {overlayEl}
+        {chestPill}
+        {chestEl}
         </div>
         </div>
         {rotateDetent}
@@ -1428,6 +1490,8 @@ export function App() {
             </CoachStep>
           )}
           {overlayEl}
+        {chestPill}
+        {chestEl}
         </div>
         {!narrow && footerStrip}
       </div>

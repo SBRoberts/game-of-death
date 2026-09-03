@@ -18,8 +18,12 @@ export interface GeneLevel {
   addBirth?: number[]
   /** Placement radius override for the owning faction. */
   radius?: number
-  /** Flat bonus to the owning faction's starting biomass. */
+  /** Flat bonus to the owning faction's starting biomass. (Legacy — mints
+   *  matter, so it's excluded from the in-run draft; use addIncomeScale.) */
   startBonus?: number
+  /** Added to the owning faction's income scale — a RATE on √population you
+   *  actually grew, not a flat grant, so it transforms rather than mints. */
+  addIncomeScale?: number
   /** Special pattern id added to the owning faction's draw pool. */
   card?: string
   /** Card overrides at this level: biomass cost and/or cell-type variant. */
@@ -79,6 +83,16 @@ export const GENES: readonly Gene[] = [
       { ashCost: 35, desc: 'Deep reserves — begin each round with +12 biomass.', startBonus: 12 },
       { ashCost: 45, desc: 'Begin each round with +24 biomass.', startBonus: 24 },
       { ashCost: 60, desc: 'Begin each round with +40 biomass.', startBonus: 40 },
+    ],
+  },
+  {
+    key: 'metabolism',
+    name: 'Metabolism',
+    kind: 'rule',
+    levels: [
+      { ashCost: 30, desc: 'Richer culture — income scales faster with your population.', addIncomeScale: 0.012 },
+      { ashCost: 45, desc: 'Income scales faster still.', addIncomeScale: 0.024 },
+      { ashCost: 60, desc: 'A thriving culture — income scales fastest.', addIncomeScale: 0.04 },
     ],
   },
   {

@@ -50,7 +50,7 @@ export const GENES: readonly Gene[] = [
     name: 'Hardy',
     kind: 'rule',
     levels: [
-      { ashCost: 30, desc: 'Core strength — your cells survive fully surrounded (8).', addSurvive: [8] },
+      { ashCost: 30, desc: 'Core strength — your cells survive fully surrounded (8 neighbors).', addSurvive: [8] },
       { ashCost: 85, desc: 'Your cells survive dense crowds (7–8 neighbors).', addSurvive: [7, 8] },
       { ashCost: 160, desc: 'Your cells thrive in the crush (6–8 neighbors).', addSurvive: [6, 7, 8] },
     ],
@@ -60,7 +60,7 @@ export const GENES: readonly Gene[] = [
     name: 'HighLife',
     kind: 'rule',
     levels: [
-      { ashCost: 40, desc: 'Replicator blood — your births also trigger on 6.', addBirth: [6] },
+      { ashCost: 40, desc: 'Replicator blood — your births also trigger on 6 neighbors.', addBirth: [6] },
       { ashCost: 90, desc: 'Births trigger on 6 or 8 neighbors.', addBirth: [6, 8] },
       { ashCost: 170, desc: 'Births trigger on any of 6, 7, 8.', addBirth: [6, 7, 8] },
     ],

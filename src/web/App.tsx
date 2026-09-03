@@ -217,6 +217,7 @@ function StormTrack({ hud, grace, maxInset }: { hud: Hud | null; grace: number; 
 /** How far the specimen has strayed from pure Conway, filling toward the
  *  round's warp cap. The spectral fill is the pure→warped gradient made visible. */
 function WarpMeter({ warp, cap }: { warp: number; cap: number }) {
+  if (cap <= 0) return null // round 1's cap is 0 — no warp is possible, so hide the empty rail
   const capShown = Number.isFinite(cap) ? cap : 10
   const frac = capShown > 0 ? Math.min(1, warp / capShown) : warp > 0 ? 1 : 0
   return (
@@ -274,22 +275,18 @@ function ThrottleWell({
   )
 }
 
-function FilterSet({ scheme, onOpen }: { scheme: PaletteMode; onOpen: () => void }) {
+function FilterSet({ scheme }: { scheme: PaletteMode }) {
   const s = SCHEMES[scheme]
+  // A passive readout of the active dye pair — the gear beside it opens settings.
   return (
-    <button
-      className="filter-set"
-      title="filter set & vision options"
-      aria-label={`filter set ${s.youName} and ${s.rivalName}; open vision settings`}
-      onClick={onOpen}
-    >
+    <div className="filter-set" aria-label={`filter set: ${s.youName} and ${s.rivalName}`}>
       <span className="lbl-xs">FILTER SET</span>
       <span className="stains">
         <span className="stain-you">{s.youName}</span>
         <span className="stain-sep">/</span>
         <span className="stain-rival">{s.rivalName}</span>
       </span>
-    </button>
+    </div>
   )
 }
 
@@ -912,7 +909,9 @@ export function App() {
         setHud({
           gen: s.gen,
           biomass: Math.floor(duel.biomass[PLAYER]),
-          rate: (duel.income(PLAYER) * SPEEDS[speedRef.current]).toFixed(1),
+          // While paused (speed 0) show the resting 1× rate, not +0.0/s — the
+          // coach teaches "income accrues per generation" at exactly this moment.
+          rate: (duel.income(PLAYER) * SPEEDS[Math.max(1, speedRef.current)]).toFixed(1),
           destroyed: sum.rivalDestroyed,
           captured: sum.radicalsClaimed + sum.rivalConverted,
           inset: s.ringInset,
@@ -1169,6 +1168,7 @@ export function App() {
           newFrontier={runRecord?.newFrontier ?? false}
           nextUnlock={nextUnlockGap(meta)}
           seed={seed}
+          lost={hud.status !== 'won'}
           onGenome={() => setShowGenome(true)}
           primary={
             hud.status === 'won' && round < ROUNDS.length
@@ -1263,7 +1263,7 @@ export function App() {
         <div className="turn">TURN THE SLIDE</div>
         <div className="why">
           The specimen is 128 × 80 cells. It needs the long edge of your screen — anything less and
-          the puncta stop being readable.
+          the cells stop being readable.
         </div>
         <div className="spacer" />
         <div className="status">
@@ -1371,7 +1371,7 @@ export function App() {
         </div>
 
         <div className="island isl-tr">
-          <FilterSet scheme={scheme} onOpen={() => setShowSettings(true)} />
+          <FilterSet scheme={scheme} />
           <div className="vdiv" />
           <button
             className="glyph-btn"
@@ -1432,7 +1432,6 @@ export function App() {
           <Tickers hud={hud} />
           <div className="ticker-meta num">
             <span>gen {hud?.gen ?? 0}</span>
-            <span>10× objective</span>
           </div>
         </div>
 
@@ -1535,7 +1534,7 @@ export function App() {
       <div className="hand-block">
         <div className="rail-group-label">
           <span className="lbl-sm">{over ? 'HAND · SPENT' : 'HAND'}</span>
-          <span className="aside">REACH {duel.radii[PLAYER]} ON SLIDE</span>
+          <span className="aside">REACH · {duel.radii[PLAYER]} ON SLIDE</span>
         </div>
         <Hand
           duel={duel}

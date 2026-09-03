@@ -104,10 +104,10 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           </button>
         </div>
 
+        <div className="howto-scroll">
         <p className="howto-lede">
-          In <b>THE GAME OF DEATH</b>, your colony of living cells must evolve to overcome its foes.
-          The board runs on Conway's Game of Life — four simple rules decide who lives and who dies
-          each generation:
+          In <b>THE GAME OF DEATH</b> you grow a colony on Conway's Game of Life — four simple rules
+          decide who lives and who dies each generation:
         </p>
 
         <div className="rules-grid">
@@ -154,8 +154,9 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           <div className="howto-step">
             <span className="n">2</span>
             <div>
-              <b>Aim on the slide.</b> Place near your colony; the ghost simulates 24 generations
-              ahead and grades the spot. <kbd>R</kbd> rotates. Cells that will settle glow solid.
+              <b>Aim on the slide.</b> Place near your colony; a translucent preview — the ghost —
+              simulates 24 generations ahead and grades the spot. <kbd>R</kbd> rotates. Cells that
+              will settle glow solid.
             </div>
           </div>
           <div className="howto-step">
@@ -181,7 +182,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           things can happen — learn to force them and a single placement can turn a whole flank:
         </p>
 
-        <div className="rules-grid">
+        <div className="rules-grid rules-grid--duel">
           <div className="rule">
             <DuelDiagram
               neighbors={[[0, -1, 'you'], [-1, 0, 'you'], [1, 0, 'you']]}
@@ -190,7 +191,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             />
             <div className="rule-text">
               <b>Recruitment</b>
-              <span>a newborn cell joins the faction that surrounds it — grow into contested ground and the births are yours</span>
+              <span>a newborn joins whichever faction surrounds it — push into contested ground and the births are yours</span>
             </div>
           </div>
           <div className="rule">
@@ -212,7 +213,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             />
             <div className="rule-text">
               <b>Casualties</b>
-              <span>outnumbered by just one, with an ally still beside it, a contested enemy dies instead — a chain of these is a rout</span>
+              <span>outnumbered by one yet flanked by an ally, a contested enemy dies — chain these for a rout</span>
             </div>
           </div>
         </div>
@@ -223,6 +224,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           mutations, special cells, and bigger starting <b>seeds</b>. Every run is a fresh, seeded
           universe.
         </p>
+        </div>
 
         <button className="title-btn primary howto-start" onClick={onStart}>
           START

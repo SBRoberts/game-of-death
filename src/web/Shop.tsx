@@ -66,17 +66,19 @@ export function Shop({
               disabled={sold || !afford}
               onClick={() => onBuy(it)}
               aria-label={`${it.name}, ${RARITY[it.rarity].label}, ${it.price} plasm. ${it.desc} ${
-                dormant ? 'Activates a later round.' : ''
-              } ${sold ? 'Bought.' : !afford ? 'Not enough plasm.' : ''}`}
+                it.warp > 0 ? `Warp +${it.warp}.` : ''
+              } ${dormant ? 'Activates a later round.' : ''} ${
+                sold ? 'Bought.' : !afford ? 'Not enough plasm.' : ''
+              }`}
             >
               <span className="si-top">
-                <span className="si-rarity">{RARITY[it.rarity].label}</span>
+                {it.rarity !== 'common' && <span className="si-rarity">{RARITY[it.rarity].label}</span>}
                 <span className="si-price num">◈ {it.price}</span>
               </span>
               <span className="si-name">{it.name}</span>
               <span className="si-desc">{it.desc}</span>
               <span className="si-foot">
-                {it.warp > 0 && <span className="si-warp">⌁ +{it.warp}</span>}
+                {it.warp > 0 && <span className="si-warp">⌁ +{it.warp} warp</span>}
                 {dormant && <span className="si-dormant">activates later</span>}
               </span>
               {sold && <span className="si-sold">SPLICED ✓</span>}
@@ -90,9 +92,14 @@ export function Shop({
           className="shop-reroll"
           disabled={plasm < rerollCost}
           onClick={onReroll}
-          aria-label={`reroll the stock for ${rerollCost} plasm`}
+          aria-label={rerollCost === 0 ? 'reroll the stock for free' : `reroll the stock for ${rerollCost} plasm`}
         >
-          ↻ reroll <span className="num">◈ {rerollCost}</span>
+          ↻ REROLL{' '}
+          {rerollCost === 0 ? (
+            <span className="num">· free</span>
+          ) : (
+            <span className="num">◈ {rerollCost}</span>
+          )}
         </button>
         <button className="shop-continue" onClick={onContinue}>
           BEGIN ROUND {round} · {nextRoundLabel} →

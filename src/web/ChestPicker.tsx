@@ -46,7 +46,7 @@ export function ChestPicker({ options, remaining, onPick, onClose }: ChestPicker
 
   return (
     <div className="chest-backdrop" role="dialog" aria-modal="true" aria-label="Plasmid chest — choose a mutagen">
-      <div className="chest" ref={rootRef}>
+      <div className={`chest ${options.length >= 4 ? 'wide' : ''}`} ref={rootRef}>
         <div className="chest-head">
           <span className="chest-title">PLASMID RECOVERED</span>
           {remaining > 1 && <span className="chest-remaining">+{remaining - 1} more waiting</span>}
@@ -76,7 +76,7 @@ export function ChestPicker({ options, remaining, onPick, onClose }: ChestPicker
                   ? o.warp > 0
                     ? `⌁ warp +${o.warp} · active now`
                     : 'active now'
-                  : 'dormant · activates a warpier round'}
+                  : 'dormant · unlocks in a later round'}
               </span>
             </button>
           ))}

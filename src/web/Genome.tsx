@@ -4,7 +4,6 @@ import { useModal } from './useModal'
 import {
   BSL,
   PERKS,
-  bslDef,
   perkCap,
   perkCost,
   perkLevel,
@@ -127,7 +126,8 @@ export function Genome({
         {/* ── Capped baseline perks ── */}
         <div className="lab-section">
           <div className="lab-shead">
-            <span className="lbl-sm">BASELINE — a short, capped ramp</span>
+            <span className="lbl-sm">BASELINE — permanent starting perks</span>
+            <span className="lab-note">small boosts, each capped — never stronger than a pure run</span>
             {maxed && <span className="lab-complete">✓ BASELINE COMPLETE</span>}
           </div>
           <div className="perk-row">
@@ -212,7 +212,7 @@ export function Genome({
         </div>
 
         <div className="lab-foot">
-          Power is earned in-run and wiped each run — the lab only sets the terms. BSL {bslDef(meta.bsl).level} selected.
+          Power is earned in-run and wiped each run — the lab only sets the terms.
         </div>
       </div>
     </div>

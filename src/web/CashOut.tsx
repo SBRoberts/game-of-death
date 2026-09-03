@@ -18,6 +18,8 @@ interface CashOutProps {
   nextUnlock: { gap: number; label: string } | null
   /** The run's seed, offered as a shareable copy chip. */
   seed: string
+  /** True when the round was lost — suppresses win-flavored carrot copy. */
+  lost?: boolean
   onGenome: () => void
   primary: { label: string; onClick: () => void }
 }
@@ -37,6 +39,7 @@ export function CashOut({
   newFrontier,
   nextUnlock,
   seed,
+  lost,
   onGenome,
   primary,
 }: CashOutProps) {
@@ -105,10 +108,7 @@ export function CashOut({
       <div className={`plate-total ${done ? 'done' : ''}`}>
         <div className="kv">
           <span className="lbl-sm">ASH EARNED</span>
-          <span className="bank">
-            bank ⬡ {bank}
-            {done && total === 0 ? ' · the universe owes you nothing' : ''}
-          </span>
+          {done && total === 0 && <span className="bank">the universe owes you nothing</span>}
         </div>
         <span className="sum">
           <span className="glyph">⬡</span>
@@ -121,6 +121,8 @@ export function CashOut({
             <span className="carrot-next">
               <span className="num">⬡ {nextUnlock.gap}</span> to {nextUnlock.label}
             </span>
+          ) : lost ? (
+            <span className="carrot-next" /> // no triumphant carrot under a loss
           ) : (
             <span className="carrot-next">everything within reach — go bigger</span>
           )}

@@ -148,10 +148,45 @@ canvas {
   cursor: crosshair;
   image-rendering: pixelated;
   border-radius: 12px;
+  /* dwell-zoom: the loupe eases in when the cursor rests, out when it moves */
+  transition: transform 360ms cubic-bezier(0.22, 0.9, 0.3, 1);
+  will-change: transform;
 }
 
 .mount-float canvas {
   border-radius: 0;
+}
+
+/* Clip the magnified board to its own box so the loupe never spills over chrome. */
+.mount-float .board-frame,
+.board-wrap {
+  overflow: hidden;
+}
+
+/* While aiming, the hand slides down to a lip so the board's bottom is
+   reachable — placing under the tray no longer means fighting it. */
+.isl-bc {
+  transition: transform 260ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 260ms;
+}
+
+.isl-bc.retracted {
+  transform: translate(-50%, 58%);
+  opacity: 0.42;
+}
+
+.isl-bc.retracted:hover {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  canvas,
+  .isl-bc {
+    transition: none !important;
+  }
+  .isl-bc.retracted {
+    transform: translate(-50%, 58%);
+  }
 }
 
 .board-wrap.shaking,

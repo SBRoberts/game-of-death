@@ -730,9 +730,48 @@ export function App() {
     }
   }, [coached, placedOnce, speedIdx])
 
+  // ── dwell-zoom: a microscope loupe that focuses when the cursor holds still
+  // and pulls back when it moves. The 2D→cell mapping is scale-invariant
+  // (fraction-based), so placing while magnified still lands on the right cell.
+  const boardBoxRef = useRef<HTMLDivElement>(null)
+  const dwellTimer = useRef(0)
+  const zoomedRef = useRef(false)
+  const reducedMotion = useMemo(
+    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  )
+  const zoomOut = useCallback(() => {
+    window.clearTimeout(dwellTimer.current)
+    if (zoomedRef.current && canvasRef.current) {
+      canvasRef.current.style.transform = 'scale(1)'
+      zoomedRef.current = false
+    }
+  }, [])
+  const scheduleDwell = useCallback(
+    (clientX: number, clientY: number) => {
+      if (reducedMotion) return
+      const box = boardBoxRef.current
+      if (!box) return
+      const r = box.getBoundingClientRect()
+      const fx = ((clientX - r.left) / r.width) * 100
+      const fy = ((clientY - r.top) / r.height) * 100
+      window.clearTimeout(dwellTimer.current)
+      dwellTimer.current = window.setTimeout(() => {
+        const c = canvasRef.current
+        if (!c || duelRef.current?.status !== 'running') return
+        c.style.transformOrigin = `${fx.toFixed(1)}% ${fy.toFixed(1)}%`
+        c.style.transform = 'scale(1.22)'
+        zoomedRef.current = true
+      }, 430)
+    },
+    [reducedMotion],
+  )
+
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.nativeEvent instanceof PointerEvent && (e.nativeEvent as PointerEvent).pointerType !== 'mouse') return
     hoverRef.current = cellFromPoint(e.clientX, e.clientY)
+    zoomOut()
+    scheduleDwell(e.clientX, e.clientY)
   }
 
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -828,6 +867,7 @@ export function App() {
       onMouseMove={onMove}
       onMouseLeave={() => {
         if (!touchDragRef.current) hoverRef.current = null
+        zoomOut()
       }}
       onClick={onClick}
       onContextMenu={onContextMenu}
@@ -998,7 +1038,7 @@ export function App() {
     return (
       <div className={`stage mount-float ${shake} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
         <div className="board-slot">
-        <div className="board-frame" style={{ width: layout.cssW, height: layout.cssH }}>
+        <div className="board-frame" ref={boardBoxRef} style={{ width: layout.cssW, height: layout.cssH }}>
         {canvasEl}
 
         <div className="island isl-tl">
@@ -1071,7 +1111,7 @@ export function App() {
           )}
         </div>
 
-        <div className="island isl-bc">
+        <div className={`island isl-bc ${selected !== null ? 'retracted' : ''}`}>
           <Hand
             duel={duel}
             biomass={hud?.biomass ?? 0}
@@ -1249,7 +1289,7 @@ export function App() {
     <div className={`stage mount-${layout.mount}`}>
       <div className="board-col">
         {!narrow && labelStrip}
-        <div className={`board-wrap ${shake}`}>
+        <div className={`board-wrap ${shake}`} ref={boardBoxRef}>
           {canvasEl}
           {coachStep > 0 && !over && (
             <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">

@@ -45,7 +45,6 @@ import {
   claimChallenge,
   earnAsh,
   loadMeta,
-  loadoutOf,
   nextSlotCost,
   nextUnlockGap,
   recordRun,
@@ -53,7 +52,7 @@ import {
   toggleEquip,
   upgradeCost,
 } from './meta'
-import { seedById } from '../sim'
+import { seedById, type GeneChoice } from '../sim'
 
 const PLACE_SOUND: Record<string, SfxName> = {
   hold: 'place_hold',
@@ -325,19 +324,28 @@ export function App() {
   const metaRef = useRef(meta)
   metaRef.current = meta
   const duelRef = useRef<Duel | null>(null)
+  // The build DRAFTED during this run (shop + chests). It persists across the
+  // 3 rounds (round 1's harvest is round 3's power) and is wiped on a new run.
+  // Every run's BASE loadout is now empty — no start-of-run power; the board
+  // opens pure B3/S23 and only strays as you draft, gated by the round's warp cap.
+  const runLoadoutRef = useRef<GeneChoice[]>([])
   const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), [])
   const layout = useLayout()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
   const duel = useMemo(() => {
     const r = ROUNDS[round - 1]
-    return new Duel(
+    const d = new Duel(
       round === 1 ? seed : `${seed}-r${round}`,
       { aiSamples: r.aiSamples, aiActEvery: r.aiActEvery },
-      loadoutOf(metaRef.current),
+      [], // no equipped start-power — power is earned in-run
       r.rivalLoadout,
       metaRef.current.seedSel,
       r.rivalSeed,
     )
+    d.warpCap = r.warpCap
+    d.runLoadout = runLoadoutRef.current
+    d.rebuildPlayer()
+    return d
   }, [seed, run, round])
   duelRef.current = duel
 
@@ -435,6 +443,7 @@ export function App() {
   }, [layout.mount])
 
   const newRun = useCallback(() => {
+    runLoadoutRef.current = [] // wipe the drafted build — every run starts pure
     setSeed(randomSeed())
     setRun((r) => r + 1)
     setRound(1)

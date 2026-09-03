@@ -18,6 +18,8 @@ interface HandProps {
   selected: number | null
   rotation: number
   onSelect: (idx: number) => void
+  onRerollCard: (idx: number) => void
+  onRerollHand: () => void
   variant: HandVariant
 }
 
@@ -33,7 +35,16 @@ const tiltReset = (e: React.MouseEvent<HTMLButtonElement>) => {
   e.currentTarget.style.setProperty('--ty', '0')
 }
 
-export function Hand({ duel, biomass, selected, rotation, onSelect, variant }: HandProps) {
+export function Hand({
+  duel,
+  biomass,
+  selected,
+  rotation,
+  onSelect,
+  onRerollCard,
+  onRerollHand,
+  variant,
+}: HandProps) {
   // A slot whose card id changed gets a fresh key → deal-in animation.
   const prevIds = useRef<string[]>([])
   const bumps = useRef<number[]>([])
@@ -44,8 +55,15 @@ export function Hand({ duel, biomass, selected, rotation, onSelect, variant }: H
   })
   prevIds.current = [...duel.hand]
 
+  const running = duel.status === 'running'
+  const costOne = duel.rerollCost(false)
+  const costAll = duel.rerollCost(true)
+  const canOne = running && selected !== null && biomass >= costOne
+  const canAll = running && biomass >= costAll
+
   return (
-    <div className={`hand-cards ${variant === 'float' ? 'row' : ''}`}>
+    <>
+      <div className={`hand-cards ${variant === 'float' ? 'row' : ''}`}>
       {duel.hand.map((id, i) => {
         const p = duel.patternFor(1, id)
         const cells = rotate(p.cells, selected === i ? rotation : 0)
@@ -135,6 +153,32 @@ export function Hand({ duel, biomass, selected, rotation, onSelect, variant }: H
           </button>
         )
       })}
-    </div>
+      </div>
+      {running && (
+        <div className={`reroll-bar ${variant}`}>
+          <button
+            className="reroll swap"
+            onClick={() => selected !== null && onRerollCard(selected)}
+            disabled={!canOne}
+            aria-label={
+              selected === null
+                ? 'select a card to redraw it'
+                : `redraw the selected card for ${costOne} biomass`
+            }
+            title={selected === null ? 'pick a card first' : undefined}
+          >
+            ↻ swap <span className="rc num">⬢ {costOne}</span>
+          </button>
+          <button
+            className="reroll all"
+            onClick={onRerollHand}
+            disabled={!canAll}
+            aria-label={`redraw the whole hand for ${costAll} biomass`}
+          >
+            ↻ new hand <span className="rc num">⬢ {costAll}</span>
+          </button>
+        </div>
+      )}
+    </>
   )
 }

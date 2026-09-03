@@ -46,6 +46,52 @@ function RuleDiagram({
   )
 }
 
+/** A 3×3 before→after showing what a contested cell becomes. `you`/`foe`
+ *  positions are neighbors; `center` is the cell whose fate is drawn. */
+function DuelDiagram({
+  neighbors,
+  before,
+  after,
+}: {
+  neighbors: Array<[number, number, 'you' | 'foe']>
+  before: 'you' | 'foe' | null
+  after: 'you' | 'foe' | null
+}) {
+  const col = (f: 'you' | 'foe' | null) =>
+    f === 'you' ? 'var(--you)' : f === 'foe' ? 'var(--rival)' : 'transparent'
+  const nMap = new Map(neighbors.map(([x, y, f]) => [`${x},${y}`, f]))
+  const grid = (center: 'you' | 'foe' | null) => (
+    <svg viewBox="-0.1 -0.1 3.2 3.2" className="rule-grid" aria-hidden="true">
+      {[0, 1, 2].map((y) =>
+        [0, 1, 2].map((x) => {
+          const isCenter = x === 1 && y === 1
+          const nb = nMap.get(`${x - 1},${y - 1}`)
+          const f = isCenter ? center : (nb ?? null)
+          return (
+            <circle
+              key={`${x},${y}`}
+              cx={x + 0.5}
+              cy={y + 0.5}
+              r={isCenter ? 0.42 : 0.34}
+              fill={col(f)}
+              stroke={isCenter ? col(center) || 'var(--dim)' : 'transparent'}
+              strokeWidth={0.08}
+              opacity={f ? 1 : isCenter ? 0.3 : 0}
+            />
+          )
+        }),
+      )}
+    </svg>
+  )
+  return (
+    <span className="rule-diagram">
+      {grid(before)}
+      <span className="rule-arrow">→</span>
+      {grid(after)}
+    </span>
+  )
+}
+
 /** A concise rules panel, in the game's own voice. */
 export function HowTo({ onClose, onStart }: HowToProps) {
   return (
@@ -124,6 +170,49 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             <div>
               <b>Win the board.</b> Its border is the territory gauge — your color from the left,
               the rival's from the right. Drive them extinct before the entropy storm closes in.
+            </div>
+          </div>
+        </div>
+
+        <div className="howto-divider">THE DUEL</div>
+
+        <p className="howto-lede">
+          Two colonies share one board, so Life's rules become weapons. Where fronts collide, three
+          things can happen — learn to force them and a single placement can turn a whole flank:
+        </p>
+
+        <div className="rules-grid">
+          <div className="rule">
+            <DuelDiagram
+              neighbors={[[0, -1, 'you'], [-1, 0, 'you'], [1, 0, 'you']]}
+              before={null}
+              after="you"
+            />
+            <div className="rule-text">
+              <b>Recruitment</b>
+              <span>a newborn cell joins the faction that surrounds it — grow into contested ground and the births are yours</span>
+            </div>
+          </div>
+          <div className="rule">
+            <DuelDiagram
+              neighbors={[[0, -1, 'you'], [-1, 0, 'you'], [1, 0, 'foe']]}
+              before="foe"
+              after="you"
+            />
+            <div className="rule-text">
+              <b>Flanking</b>
+              <span>an enemy cell outnumbered by two or more defects to you — surround theirs to turn it against them</span>
+            </div>
+          </div>
+          <div className="rule">
+            <DuelDiagram
+              neighbors={[[0, -1, 'you'], [1, 0, 'foe']]}
+              before="foe"
+              after={null}
+            />
+            <div className="rule-text">
+              <b>Casualties</b>
+              <span>merely outnumbered, with no clear victor, a contested enemy dies instead — a chain of these is a rout</span>
             </div>
           </div>
         </div>

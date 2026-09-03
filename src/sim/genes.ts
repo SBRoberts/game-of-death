@@ -137,5 +137,7 @@ export const geneByKey = (key: string): Gene => {
 
 export const maxLevel = (key: string): number => geneByKey(key).levels.length
 
-/** Ash price of the next genome slot; index = slots already owned (cap 5). */
-export const SLOT_COSTS = [40, 70, 110, 160, 220]
+/** Ash price of the next genome slot; index = slots already owned (cap 5).
+ *  The first slot is cheap so a couple of runs already buy your first gene —
+ *  the meta hooks early rather than gating the fun behind a long grind. */
+export const SLOT_COSTS = [25, 70, 110, 160, 220]

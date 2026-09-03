@@ -4,7 +4,18 @@
  * receives the equipped loadout as a plain argument.
  */
 
-import { Duel, SEEDS, SLOT_COSTS, geneByKey, maxLevel, seedById, type GeneChoice } from '../sim'
+import {
+  CHAIN_TIERS,
+  Duel,
+  GENES,
+  SEEDS,
+  SLOT_COSTS,
+  chainAshValue,
+  geneByKey,
+  maxLevel,
+  seedById,
+  type GeneChoice,
+} from '../sim'
 
 const KEY = 'god-meta-v1'
 
@@ -22,6 +33,10 @@ export interface MetaState {
   seedSel: string
   /** Completed challenge-seed ids (bounty already paid). */
   challenges: string[]
+  /** Biggest cascade ever pulled off (peak chain ×N) — the flex stat. */
+  best: number
+  /** Furthest round ever reached (1-based) — the progress stat. */
+  bestRound: number
 }
 
 export function loadMeta(): MetaState {
@@ -33,6 +48,8 @@ export function loadMeta(): MetaState {
     seedsOwned: [...STARTER_SEEDS],
     seedSel: 'seedling',
     challenges: [],
+    best: 0,
+    bestRound: 0,
   })
   try {
     const raw = localStorage.getItem(KEY)
@@ -58,6 +75,8 @@ export function loadMeta(): MetaState {
         seedsOwned,
         seedSel,
         challenges: Array.isArray(m.challenges) ? m.challenges : [],
+        best: m.best! | 0,
+        bestRound: m.bestRound! | 0,
       }
     }
   } catch {
@@ -84,15 +103,28 @@ export interface AshRow {
   label: string
   detail: string
   value: number
+  /** Chain tier index (0-4) for cascade rows, so the ledger can color them. */
+  tier?: number
 }
 
 /**
  * Itemized ash payout — one source of truth for the earn logic AND the
  * cash-out screen, so the reward you watch count up is the reward you get.
+ *
+ * Raw attrition ('destruction') is the floor; the banked cascades are the
+ * highlight reel — each named chain pays a convex tier bonus on top, so the
+ * skill of *engineering* a wipe out-earns grinding one cell at a time.
  */
-export function ashBreakdown(duel: Duel, runClear: boolean): { rows: AshRow[]; total: number } {
+export function ashBreakdown(
+  duel: Duel,
+  runClear: boolean,
+  opts: { newFrontier?: boolean } = {},
+): { rows: AshRow[]; total: number } {
   const s = duel.summary
   const rows: AshRow[] = [
+    // Loss-floor: every specimen you run pays something, so a death is never a
+    // dry hole — you always walk away with progress.
+    { label: 'specimen logged', detail: 'the record grows', value: 3 },
     { label: 'endurance', detail: `${s.gens} generations`, value: Math.floor(s.gens / 20) },
     {
       label: 'destruction',
@@ -100,6 +132,23 @@ export function ashBreakdown(duel: Duel, runClear: boolean): { rows: AshRow[]; t
       value: Math.floor(s.rivalDestroyed / 2000),
     },
   ]
+  // New frontier: reaching a round you've never reached pays a milestone bounty,
+  // win or lose — so pushing deeper is rewarded even on the run that kills you.
+  if (opts.newFrontier)
+    rows.push({ label: 'new frontier', detail: 'deepest yet', value: 30 })
+  // Cascade rows: one per tier reached, richest tier first (the reel's peak).
+  const byTier = new Map<number, number>()
+  for (const bc of s.bankedCombos) byTier.set(bc.tier, (byTier.get(bc.tier) ?? 0) + 1)
+  for (let t = CHAIN_TIERS.length - 1; t >= 0; t--) {
+    const n = byTier.get(t)
+    if (!n) continue
+    rows.push({
+      label: CHAIN_TIERS[t].name.toLowerCase(),
+      detail: n > 1 ? `${n} cascades` : 'a cascade',
+      value: chainAshValue(t) * n,
+      tier: t,
+    })
+  }
   if (s.radicalsClaimed > 0)
     rows.push({
       label: 'capture',
@@ -119,12 +168,58 @@ export function ashBreakdown(duel: Duel, runClear: boolean): { rows: AshRow[]; t
 }
 
 /** Ash earned by a finished duel (see ashBreakdown for the itemization). */
-export function ashFor(duel: Duel, runClear = false): number {
-  return ashBreakdown(duel, runClear).total
+export function ashFor(duel: Duel, runClear = false, opts: { newFrontier?: boolean } = {}): number {
+  return ashBreakdown(duel, runClear, opts).total
 }
 
 export function earnAsh(m: MetaState, amount: number): MetaState {
   return save({ ...m, ash: m.ash + amount })
+}
+
+/**
+ * Fold a finished run's records into the meta. Returns the new state and which
+ * records fell, so the cash-out can announce NEW BEST / NEW FRONTIER.
+ */
+export function recordRun(
+  m: MetaState,
+  peakChain: number,
+  roundReached: number,
+): { meta: MetaState; newBest: boolean; newFrontier: boolean } {
+  const newBest = peakChain > m.best
+  const newFrontier = roundReached > m.bestRound
+  if (!newBest && !newFrontier) return { meta: m, newBest: false, newFrontier: false }
+  return {
+    meta: save({
+      ...m,
+      best: Math.max(m.best, peakChain),
+      bestRound: Math.max(m.bestRound, roundReached),
+    }),
+    newBest,
+    newFrontier,
+  }
+}
+
+/**
+ * The smallest ash gap to the next thing you could buy (slot, gene level, or
+ * seed). Null when everything reachable is already affordable or maxed — the
+ * cash-out uses it for the "N to next unlock" carrot.
+ */
+export function nextUnlockGap(m: MetaState): { gap: number; label: string } | null {
+  const options: { cost: number; label: string }[] = []
+  const slot = nextSlotCost(m)
+  if (slot !== null) options.push({ cost: slot, label: 'a genome slot' })
+  for (const g of GENES) {
+    const c = upgradeCost(m, g.key)
+    if (c !== null) options.push({ cost: c, label: (m.levels[g.key] ?? 0) > 0 ? `${g.name} +1` : g.name })
+  }
+  for (const s of SEEDS) {
+    if (!m.seedsOwned.includes(s.id) && s.ashCost > 0)
+      options.push({ cost: s.ashCost, label: s.name })
+  }
+  const unaffordable = options.filter((o) => o.cost > m.ash).sort((a, b) => a.cost - b.cost)
+  if (unaffordable.length === 0) return null
+  const next = unaffordable[0]
+  return { gap: next.cost - m.ash, label: next.label }
 }
 
 export function nextSlotCost(m: MetaState): number | null {

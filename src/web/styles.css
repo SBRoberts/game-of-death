@@ -966,6 +966,57 @@ canvas {
   gap: 9px;
 }
 
+/* Reroll bar: a biomass sink to dig for a better hand. */
+.reroll-bar {
+  display: flex;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.reroll {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 130ms, border-color 130ms, background 130ms;
+}
+
+.reroll:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--you);
+  background: rgba(66, 245, 155, 0.06);
+}
+
+.reroll:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.reroll .rc {
+  color: var(--you);
+  font-size: 11px;
+}
+
+.reroll:disabled .rc {
+  color: var(--faint);
+}
+
+/* On the compact rail the bar stacks its label tighter. */
+.reroll-bar.compact .reroll {
+  padding: 6px 8px;
+  font-size: 10px;
+}
+
 .card {
   position: relative;
   display: flex;
@@ -1262,6 +1313,66 @@ canvas {
   color: var(--faint);
 }
 
+/* Highlight-reel header: the run's peak cascade, stamped with any record. */
+.reel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(66, 245, 155, 0.06), transparent 70%);
+}
+
+.reel-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.reel-peak {
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--you);
+  text-shadow: 0 0 18px rgba(66, 245, 155, 0.4);
+}
+
+.reel-badge {
+  margin-left: auto;
+  align-self: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  animation: badge-pop 360ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.reel-badge.best {
+  color: #1a1205;
+  background: var(--gold);
+  box-shadow: 0 0 20px rgba(232, 196, 99, 0.55);
+}
+
+.reel-badge.frontier {
+  color: #04120a;
+  background: var(--you);
+  box-shadow: 0 0 20px rgba(66, 245, 155, 0.5);
+}
+
+@keyframes badge-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6) rotate(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
 .plate-rows {
   padding: 4px 22px 0;
 }
@@ -1315,6 +1426,17 @@ canvas {
   color: var(--gold);
 }
 
+/* Cascade rows carry their tier color (set inline) on the name + detail. */
+.plate-row.cascade .rname {
+  color: inherit;
+  text-shadow: 0 0 12px currentColor;
+}
+
+.plate-row.cascade .rdetail {
+  color: inherit;
+  opacity: 0.62;
+}
+
 .plate-total {
   display: flex;
   align-items: flex-end;
@@ -1350,6 +1472,45 @@ canvas {
 
 .plate-total.done .sum .val {
   animation: stat-bump 320ms ease-out;
+}
+
+/* The carrot: how close the next unlock is, plus a shareable seed chip. */
+.plate-carrot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 22px;
+  margin: 0 22px;
+  border-top: 1px dashed var(--line-soft);
+  animation: cashout-land 300ms cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+
+.carrot-next {
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.carrot-next .num {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.seed-share {
+  margin-left: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: color 140ms, border-color 140ms;
+}
+
+.seed-share:hover {
+  color: var(--text);
+  border-color: var(--line-strong, var(--dim));
 }
 
 .plate-actions {
@@ -2568,6 +2729,8 @@ canvas {
   .overlay .verdict,
   .plate-row,
   .plate-total.done .sum .val,
+  .plate-carrot,
+  .reel-badge,
   .shop-badge,
   .tickers .kills,
   .tickers .captures,

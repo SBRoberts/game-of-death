@@ -47,6 +47,8 @@ import {
   loadMeta,
   loadoutOf,
   nextSlotCost,
+  nextUnlockGap,
+  recordRun,
   selectSeed,
   toggleEquip,
   upgradeCost,
@@ -311,6 +313,12 @@ export function App() {
   const [showGenome, setShowGenome] = useState(false)
   const [ashEarned, setAshEarned] = useState<number | null>(null)
   const [challengeBounty, setChallengeBounty] = useState(0)
+  // Records set by the run that just ended, for the cash-out's headline.
+  const [runRecord, setRunRecord] = useState<{
+    peak: number
+    newBest: boolean
+    newFrontier: boolean
+  } | null>(null)
   // The title screen shows first; START drops into a fresh run.
   const [screen, setScreen] = useState<'title' | 'game'>('title')
   const [showHowTo, setShowHowTo] = useState(false)
@@ -434,6 +442,7 @@ export function App() {
     setSpeedIdx(1)
     setAshEarned(null)
     setChallengeBounty(0)
+    setRunRecord(null)
     setShowGenome(false)
     flashesRef.current = []
   }, [])
@@ -461,6 +470,7 @@ export function App() {
     setSpeedIdx(1)
     setAshEarned(null)
     setChallengeBounty(0)
+    setRunRecord(null)
     flashesRef.current = []
   }, [])
 
@@ -485,6 +495,21 @@ export function App() {
     },
     [duel, coarse],
   )
+
+  // Reroll: spend biomass to dig for a better hand. Deselecting after a swap
+  // forces an immediate re-render (the HUD tick would otherwise lag ~100ms).
+  const rerollCard = useCallback((i: number) => {
+    if (duelRef.current?.rerollCard(i)) {
+      sfx.play('place_grow')
+      setSelected(null)
+    } else sfx.play('invalid')
+  }, [])
+  const rerollHand = useCallback(() => {
+    if (duelRef.current?.rerollHand()) {
+      sfx.play('release')
+      setSelected(null)
+    } else sfx.play('invalid')
+  }, [])
 
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
@@ -660,16 +685,23 @@ export function App() {
         sfx.play(won ? 'win' : 'lose')
         freeze(150, 1) // the climax lands on a held frame
         const runClear = won && round === ROUNDS.length
-        const base = ashFor(duel, runClear)
+        // A round deeper than you've ever reached pays a frontier bounty — read
+        // the pre-update record so win and loss are scored the same way.
+        const frontier = round > metaRef.current.bestRound
+        const base = ashFor(duel, runClear, { newFrontier: frontier })
         // A challenge seed pays a one-time bounty the first time it's cleared.
         const cseed = seedById(duel.colonySeed)
         const challengeHit = won && !!cseed.challenge && !metaRef.current.challenges.includes(duel.colonySeed)
         const bounty = challengeHit ? cseed.challenge!.rewardAsh : 0
         setChallengeBounty(bounty)
         setAshEarned(base + bounty)
+        const peak = Math.round(duel.summary.peakChain)
         setMeta((m) => {
           const earned = earnAsh(m, base)
-          return challengeHit ? claimChallenge(earned, duel.colonySeed).meta : earned
+          const paid = challengeHit ? claimChallenge(earned, duel.colonySeed).meta : earned
+          const rec = recordRun(paid, peak, round)
+          setRunRecord({ peak, newBest: rec.newBest, newFrontier: rec.newFrontier })
+          return rec.meta
         })
         setAnnounce(
           won
@@ -1012,7 +1044,7 @@ export function App() {
     : ''
 
   const cashBreakdown = () => {
-    const bd = ashBreakdown(duel, runClear)
+    const bd = ashBreakdown(duel, runClear, { newFrontier: runRecord?.newFrontier ?? false })
     if (challengeBounty > 0) {
       return {
         rows: [
@@ -1041,6 +1073,11 @@ export function App() {
           breakdown={cashBreakdown()}
           bank={meta.ash}
           meta={`${hud.gen} generations · ${ROUNDS[round - 1].label}`}
+          peak={runRecord?.peak ?? 0}
+          newBest={runRecord?.newBest ?? false}
+          newFrontier={runRecord?.newFrontier ?? false}
+          nextUnlock={nextUnlockGap(meta)}
+          seed={seed}
           onGenome={() => setShowGenome(true)}
           primary={
             hud.status === 'won' && round < ROUNDS.length
@@ -1237,6 +1274,8 @@ export function App() {
             selected={selected}
             rotation={rotation}
             onSelect={selectCard}
+            onRerollCard={rerollCard}
+            onRerollHand={rerollHand}
             variant="float"
           />
           {coachStep > 0 && !over && (
@@ -1356,6 +1395,8 @@ export function App() {
           selected={selected}
           rotation={rotation}
           onSelect={selectCard}
+          onRerollCard={rerollCard}
+          onRerollHand={rerollHand}
           variant={narrow ? 'compact' : 'rail'}
         />
         {coachStep > 0 && !over && (

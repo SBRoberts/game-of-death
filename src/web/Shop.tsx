@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import type { ShopItem } from '../sim'
+import { useModal } from './useModal'
 
 const RARITY: Record<ShopItem['rarity'], { c: string; label: string }> = {
   common: { c: '#9db2d0', label: 'COMMON' },
@@ -38,8 +40,11 @@ export function Shop({
   onReroll,
   onContinue,
 }: ShopProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useModal(rootRef) // focus in, trap Tab, restore on close
+
   return (
-    <div className="shop" role="group" aria-label="between-round shop">
+    <div className="shop" ref={rootRef} role="dialog" aria-modal="true" aria-label="between-round shop">
       <div className="shop-head">
         <span className="shop-title">THE CULTURE · SHOP</span>
         <span className="shop-plasm" aria-label={`${plasm} plasm`}>

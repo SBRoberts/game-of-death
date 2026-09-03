@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ChestOption } from '../sim'
+import { useModal } from './useModal'
 
 /** Rarity = distance from Conway; colour tracks the warp band. */
 const RARITY: Record<ChestOption['rarity'], { c: string; label: string }> = {
@@ -20,25 +21,26 @@ interface ChestPickerProps {
 
 /**
  * The in-run chest draft: crack a plasmid and splice one mutagen into your
- * strain for the rest of the run. Pick 1 of 3 — keyboard (1–3 / arrows+Enter)
+ * strain for the rest of the run. Pick 1 of N — number keys (1–N), Tab+Enter,
  * or click; Esc saves it for later.
  */
 export function ChestPicker({ options, remaining, onPick, onClose }: ChestPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  useModal(rootRef) // focus in, trap Tab, restore on close (Esc handled below)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        e.stopImmediatePropagation() // don't leak to the game's global hotkeys
         onClose()
       } else if (e.key >= '1' && e.key <= String(options.length)) {
         e.preventDefault()
+        e.stopImmediatePropagation()
         onPick(options[Number(e.key) - 1])
       }
     }
     window.addEventListener('keydown', onKey, true)
-    // focus the first option so arrows + Enter work immediately
-    rootRef.current?.querySelector<HTMLButtonElement>('.chest-opt')?.focus()
     return () => window.removeEventListener('keydown', onKey, true)
   }, [options, onPick, onClose])
 

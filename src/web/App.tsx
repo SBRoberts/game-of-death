@@ -378,8 +378,8 @@ export function App() {
     )
     d.warpCap = r.warpCap
     d.runLoadout = runLoadoutRef.current
+    d.perkIncome = perkEffects(metaRef.current).incomeBonus // Vitality perk (survives rebuilds)
     d.rebuildPlayer()
-    d.incomeScales[PLAYER] += perkEffects(metaRef.current).incomeBonus // Vitality perk
     return d
   }, [seed, run, round])
   duelRef.current = duel
@@ -1059,6 +1059,10 @@ export function App() {
   // Keyboard: space pause, 1-4 throttle, R rotate, N new run, Esc deselect.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // While any overlay owns the screen, don't let game hotkeys fire behind it
+      // (a stray 'n' in the shop would wipe the run; '1'–'4' would resume time).
+      if ((chestOpen || shopOpen || showGenome || showSettings || showHowTo) && e.key !== 'Escape')
+        return
       if (e.key === ' ') {
         e.preventDefault()
         togglePause()
@@ -1082,7 +1086,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePause, requestNewRun, debug, duel, selectCard, openChest])
+  }, [togglePause, requestNewRun, debug, duel, selectCard, openChest, chestOpen, shopOpen, showGenome, showSettings, showHowTo])
 
   // ── derived bits shared by the mounts ────────────────────────────────────
   const over = hud !== null && hud.status !== 'running'
@@ -1229,6 +1233,9 @@ export function App() {
   if (screen === 'title') {
     const startGame = () => {
       setShowHowTo(false)
+      // Session's first run doesn't route through newRun(); seed the Reserve
+      // Culture starting PLASM here so the perk isn't silently skipped on run 1.
+      runPlasmRef.current = perkEffects(metaRef.current).startPlasm
       setScreen('game')
       setSpeedIdx(0) // land paused so the first thing you do is plan
     }

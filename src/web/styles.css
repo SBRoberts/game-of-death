@@ -3064,7 +3064,7 @@ canvas {
   color: var(--r);
 }
 .opt-tag.dormant {
-  color: var(--faint);
+  color: var(--dim); /* conveys live state — must stay AA legible, not --faint */
 }
 .chest-defer {
   align-self: center;
@@ -3220,7 +3220,7 @@ canvas {
   color: var(--r);
 }
 .si-dormant {
-  color: var(--faint);
+  color: var(--dim); /* conveys live state — must stay AA legible, not --faint */
 }
 .si-sold {
   position: absolute;
@@ -3352,6 +3352,9 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .warp-track.lit .warp-fill {
     animation: none !important;
+  }
+  .warp-fill {
+    transition: none !important;
   }
 }
 

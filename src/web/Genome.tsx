@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { SEEDS, type Seed } from '../sim'
+import { useModal } from './useModal'
 import {
   BSL,
   PERKS,
@@ -72,6 +74,8 @@ export function Genome({
   onClose,
 }: GenomeProps) {
   const maxed = perksMaxed(meta)
+  const labRef = useRef<HTMLDivElement>(null)
+  useModal(labRef, onClose) // focus in, trap Tab, Esc to close, restore on close
   return (
     <div
       className="genome-backdrop"
@@ -80,7 +84,7 @@ export function Genome({
       aria-label="the culture lab"
       onClick={onClose}
     >
-      <div className="lab" onClick={(e) => e.stopPropagation()}>
+      <div className="lab" ref={labRef} onClick={(e) => e.stopPropagation()}>
         <div className="lab-head">
           <span className="gtitle">THE CULTURE · LAB</span>
           <span className="ash">

@@ -135,6 +135,9 @@ export class Duel {
   /** Run-scoped harvest currency, banked from converting radicals (never minted,
    *  never becomes biomass). Feeds the shop + chest economy; wiped each run. */
   plasm = 0
+  /** A permanent income-rate lift from meta perks (Vitality). Re-applied on
+   *  every rebuild so a mid-round chest pick can't silently drop it. */
+  perkIncome = 0
   /** Chests earned but not yet opened (the HUD shows this count). */
   pendingChests = 0
   /** How many chests have been opened this round — seeds the next offer. */
@@ -234,7 +237,7 @@ export class Duel {
     const p = foldLoadout(this.t, [...this.loadout, ...this.runLoadout], this.warpCap)
     this.playerPool = p.pool
     this.radii[PLAYER] = p.radius
-    this.incomeScales[PLAYER] = p.incomeScale
+    this.incomeScales[PLAYER] = p.incomeScale + this.perkIncome
     const rule = this.state.cfg.factions[PLAYER].rule
     rule.survive = p.rule.survive
     rule.birth = p.rule.birth

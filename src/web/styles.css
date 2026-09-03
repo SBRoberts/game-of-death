@@ -1826,6 +1826,67 @@ canvas {
   color: var(--text);
 }
 
+.rules-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 20px;
+}
+
+.rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rule-diagram {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.rule-grid {
+  width: 34px;
+  height: 34px;
+  background: var(--etch);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 2px;
+}
+
+.rule-arrow {
+  color: var(--label);
+  font-size: 12px;
+}
+
+.rule-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rule-text b {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.rule-text span {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dim);
+}
+
+.howto-divider {
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: var(--label);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+  margin-top: 2px;
+}
+
 .howto-grid {
   display: flex;
   flex-direction: column;

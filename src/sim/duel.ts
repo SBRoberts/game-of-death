@@ -21,12 +21,69 @@ import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, mask, type Rule, type SimState } from './types'
 import { aiAct, smartAct } from './ai'
+import { geneChoiceWarp } from './warp'
 
 export const PLAYER = 1
 export const RIVAL = 2
 export const RADICALS = 3
 
 export type DuelStatus = 'running' | 'won' | 'lost'
+
+/** A faction's built loadout: its Conway rule, draw pool, reach, economy. */
+export interface FoldResult {
+  rule: Rule
+  pool: Pattern[]
+  radius: number
+  incomeScale: number
+  startBonus: number
+  /** Summed warp of the choices that ended up ACTIVE (within the cap). */
+  activeWarp: number
+}
+
+const ROMAN = ['', '', ' II', ' III']
+
+/**
+ * Fold a set of gene choices into a faction's rule/pool/economy. Pure and
+ * order-deterministic. `warpCap` gates the pure→warped gradient: a choice is
+ * applied only if it keeps the running active-warp within the cap, otherwise it
+ * is held DORMANT (skipped) — so a round-1 cap of 0 folds to exactly LIFE.
+ */
+export function foldLoadout(
+  t: Tuning,
+  choices: readonly GeneChoice[],
+  warpCap = Infinity,
+): FoldResult {
+  const rule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
+  const pool: Pattern[] = [...PATTERNS]
+  let radius = t.placementRadius
+  let incomeScale = t.incomeScale
+  let startBonus = 0
+  let activeWarp = 0
+  for (const raw of choices) {
+    const choice = normalizeChoice(raw)
+    const w = geneChoiceWarp(choice)
+    if (activeWarp + w > warpCap) continue // over the cap → dormant this round
+    activeWarp += w
+    const gene = geneByKey(choice.key)
+    const level = Math.min(Math.max(choice.level, 1), gene.levels.length)
+    const g = gene.levels[level - 1]
+    if (g.addSurvive) rule.survive |= mask(...g.addSurvive)
+    if (g.addBirth) rule.birth |= mask(...g.addBirth)
+    if (g.radius !== undefined) radius = g.radius
+    if (g.startBonus) startBonus += g.startBonus
+    if (g.card) {
+      const base = patternById(g.card)
+      pool.push({
+        ...base,
+        name: base.name + ROMAN[level],
+        cost: g.cardCost ?? base.cost,
+        cellType: g.cardType ?? base.cellType,
+        tip: level > 1 ? g.desc : base.tip,
+      })
+    }
+  }
+  return { rule, pool, radius, incomeScale, startBonus, activeWarp }
+}
 
 export class Duel {
   readonly seed: string
@@ -41,14 +98,28 @@ export class Duel {
   autoRival = true
   /** Equipped gene choices (key or key+level), applied at construction. */
   readonly loadout: readonly GeneChoice[]
-  /** The player's draw pool: base deck plus unlocked special cards. */
-  readonly playerPool: readonly Pattern[]
+  /** The player's draw pool: base deck plus unlocked special cards. Mutable so
+   *  in-run shop/chest drafting can re-derive it (see rebuildPlayer). */
+  playerPool: readonly Pattern[]
   /** The rival's pool — grows with its own loadout in later rounds. */
   readonly rivalPool: readonly Pattern[]
   /** Per-faction placement radius (genes may extend the owner's only). */
   readonly radii: number[]
   /** Per-faction income scale (genes may boost the owner's only). */
   readonly incomeScales: number[]
+
+  // ── in-run drafting (shop + chests) ─────────────────────────────────────
+  /** Choices drafted DURING the run, layered on top of the base loadout. */
+  runLoadout: GeneChoice[] = []
+  /** Max active warp admitted this round; over-cap drafted tuples stay dormant
+   *  (round 1's cap of 0 keeps the board pure Conway). Infinity = no gate. */
+  warpCap = Infinity
+  /** Run-scoped harvest currency, banked from converting radicals (never minted,
+   *  never becomes biomass). Feeds the shop + chest economy; wiped each run. */
+  plasm = 0
+  /** Chests earned but not yet opened (the HUD shows this count). */
+  pendingChests = 0
+  private chestMeter = 0
 
   // ── The Chain: emergent-cascade scoring (see chain.ts) ──────────────────
   /** Live combo the web meter/callout reads each frame. */
@@ -90,40 +161,12 @@ export class Duel {
     this.rivalSeed = rivalSeed
 
     // A faction's genes build its rule, pool, and economy — all owned by that
-    // faction alone. Each gene applies at its chosen level; card genes may
-    // override the card's cost or upgrade its cell-type variant.
+    // faction alone (see foldLoadout). Each gene applies at its chosen level;
+    // card genes may override the card's cost or upgrade its cell-type variant.
     const t = { ...TUNING, ...overrides }
     this.t = t
-    const ROMAN = ['', '', ' II', ' III']
-    const build = (choices: readonly GeneChoice[]) => {
-      const rule: Rule = { birth: LIFE.birth, survive: LIFE.survive }
-      const pool: Pattern[] = [...PATTERNS]
-      let radius = t.placementRadius
-      let incomeScale = t.incomeScale
-      let startBonus = 0
-      for (const choice of choices.map(normalizeChoice)) {
-        const gene = geneByKey(choice.key)
-        const level = Math.min(Math.max(choice.level, 1), gene.levels.length)
-        const g = gene.levels[level - 1]
-        if (g.addSurvive) rule.survive |= mask(...g.addSurvive)
-        if (g.addBirth) rule.birth |= mask(...g.addBirth)
-        if (g.radius !== undefined) radius = g.radius
-        if (g.startBonus) startBonus += g.startBonus
-        if (g.card) {
-          const base = patternById(g.card)
-          pool.push({
-            ...base,
-            name: base.name + ROMAN[level],
-            cost: g.cardCost ?? base.cost,
-            cellType: g.cardType ?? base.cellType,
-            tip: level > 1 ? g.desc : base.tip,
-          })
-        }
-      }
-      return { rule, pool, radius, incomeScale, startBonus }
-    }
-    const player = build(loadout)
-    const rival = build(rivalLoadout)
+    const player = foldLoadout(t, loadout)
+    const rival = foldLoadout(t, rivalLoadout)
     this.playerPool = player.pool
     this.rivalPool = rival.pool
     this.radii = [0, player.radius, rival.radius, t.placementRadius]
@@ -158,6 +201,28 @@ export class Duel {
     this.seedRadicals(rngFrom(seed, 'radicals'))
 
     this.hand = Array.from({ length: this.t.handSize }, () => this.draw())
+  }
+
+  /**
+   * Re-derive the player's rule / pool / reach / economy from the base loadout
+   * plus the run-drafted loadout, honoring the current warp cap, and write the
+   * new Conway rule into the live faction so the next tick evolves under it.
+   * Called after a shop purchase or a chest pick. Never re-grants startBonus
+   * (that would retroactively mint biomass), keeping law #1 intact.
+   */
+  rebuildPlayer(): void {
+    const p = foldLoadout(this.t, [...this.loadout, ...this.runLoadout], this.warpCap)
+    this.playerPool = p.pool
+    this.radii[PLAYER] = p.radius
+    this.incomeScales[PLAYER] = p.incomeScale
+    const rule = this.state.cfg.factions[PLAYER].rule
+    rule.survive = p.rule.survive
+    rule.birth = p.rule.birth
+  }
+
+  /** Summed active warp of the player's current build (drives rarity + glow). */
+  get playerWarp(): number {
+    return foldLoadout(this.t, [...this.loadout, ...this.runLoadout], this.warpCap).activeWarp
   }
 
   /** Neutral debris field in the midfield: cover, obstacles, capturable matter. */
@@ -345,6 +410,18 @@ export class Duel {
       (rivalCap - this.prevRivalCap) +
       (radCap - this.prevRadCap) -
       (cd[PLAYER] - this.prevCd[PLAYER])
+    // Harvest: converting radicals banks PLASM and fills the chest meter. It's
+    // a ledger of matter already on the board (never minted), gen-indexed and
+    // deterministic — no RNG on the earn side.
+    const harvest = radCap - this.prevRadCap
+    if (harvest > 0) {
+      this.plasm += harvest * this.t.plasmPerRadical
+      this.chestMeter += harvest
+      while (this.chestMeter >= this.t.chestEvery) {
+        this.chestMeter -= this.t.chestEvery
+        this.pendingChests++
+      }
+    }
     this.prevCd[RIVAL] = cd[RIVAL]
     this.prevCd[PLAYER] = cd[PLAYER]
     this.prevRivalCap = rivalCap

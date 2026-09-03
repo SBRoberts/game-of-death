@@ -47,6 +47,12 @@ export const TUNING = {
   // capturable matter (flank a radical and it defects to you).
   radicalsCount: 36,
 
+  // Harvest economy: converting radical matter banks PLASM (the run-scoped
+  // shop/chest currency) and fills the chest meter. Both are ledgers of matter
+  // already on the board — never minted, never converted back to biomass.
+  plasmPerRadical: 1, // PLASM banked per converted radical cell
+  chestEvery: 10, // converted radical cells per in-run chest
+
   // Throttle stops, generations per second (index 0 = paused). 1× is slow
   // enough to think at; the top stop is for riding out settled positions.
   speeds: [0, 2, 5, 12, 30],

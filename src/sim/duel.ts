@@ -8,6 +8,15 @@ import { createState, setCells, step } from './engine'
 import { PATTERNS, RADICAL_SHAPES, patternById, placeAt, rotate, type Pattern } from './patterns'
 import { geneByKey, normalizeChoice, type GeneChoice } from './genes'
 import { seedById } from './seeds'
+import {
+  CHAIN_ARM_GENS,
+  CHAIN_BREAK_GENS,
+  CHAIN_FLOOR,
+  CHAIN_SPIKE_CAP,
+  chainTier,
+  type BankedChain,
+  type Combo,
+} from './chain'
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, mask, type Rule, type SimState } from './types'
@@ -40,6 +49,25 @@ export class Duel {
   readonly radii: number[]
   /** Per-faction income scale (genes may boost the owner's only). */
   readonly incomeScales: number[]
+
+  // ── The Chain: emergent-cascade scoring (see chain.ts) ──────────────────
+  /** Live combo the web meter/callout reads each frame. */
+  combo: Combo = { active: false, len: 0, total: 0, tier: -1, cx: 0, cy: 0 }
+  /** Chains banked this duel; the web watches this array's length for callouts. */
+  readonly bankedCombos: BankedChain[] = []
+  peakChain = 0
+  private comboArmedUntil = -1
+  private comboLow = 0
+  private prevCd: number[] = []
+  private prevRivalCap = 0
+  private prevRadCap = 0
+  /** Rolling baseline of net enemy losses; a chain scores the spike ABOVE it,
+   *  so steady two-front grind (net ≈ baseline) can't inflate a chain — only a
+   *  burst does. This is what keeps tiers meaningful and legible. */
+  private chainBaseline = 0
+
+  /** Reroll cost escalates with uses since your last placement. */
+  private rerollUses = 0
 
   private drawRng: Rng
   private rivalRng: Rng
@@ -114,6 +142,7 @@ export class Duel {
       flankingMargin: this.t.flankingMargin,
       casualtyMargin: this.t.casualtyMargin,
     })
+    this.prevCd = new Array(this.state.cfg.factions.length).fill(0)
     this.biomass = [
       0,
       this.t.startBiomass + player.startBonus,
@@ -215,7 +244,37 @@ export class Duel {
       playerLost: this.state.deaths[PLAYER],
       radicalsClaimed: this.state.converts[RADICALS * nf + PLAYER],
       rivalConverted: this.state.converts[RIVAL * nf + PLAYER],
+      peakChain: this.peakChain,
+      bankedCombos: this.bankedCombos,
     }
+  }
+
+  // ── reroll & dig the hand (a second biomass sink) ────────────────────────
+  /** Biomass cost of the next reroll; rises with uses since the last placement. */
+  rerollCost(whole: boolean): number {
+    return (whole ? 6 : 2) + this.rerollUses * (whole ? 4 : 2)
+  }
+
+  /** Redraw one hand slot for biomass. Returns true on success. */
+  rerollCard(handIdx: number): boolean {
+    if (this.status !== 'running' || handIdx < 0 || handIdx >= this.hand.length) return false
+    const cost = this.rerollCost(false)
+    if (this.biomass[PLAYER] < cost) return false
+    this.biomass[PLAYER] -= cost
+    this.hand[handIdx] = this.draw()
+    this.rerollUses++
+    return true
+  }
+
+  /** Redraw the whole hand for biomass. Returns true on success. */
+  rerollHand(): boolean {
+    if (this.status !== 'running') return false
+    const cost = this.rerollCost(true)
+    if (this.biomass[PLAYER] < cost) return false
+    this.biomass[PLAYER] -= cost
+    this.hand = this.hand.map(() => this.draw())
+    this.rerollUses++
+    return true
   }
 
   get maxInset(): number {
@@ -238,6 +297,7 @@ export class Duel {
 
     s.ringInset = this.insetAt(s.gen + 1)
     step(s)
+    this.trackChain()
     this.biomass[PLAYER] += this.income(PLAYER)
     this.biomass[RIVAL] += this.income(RIVAL)
 
@@ -261,8 +321,76 @@ export class Duel {
   }
 
   private finish(status: DuelStatus, outcome: string): void {
+    // Bank any chain still building when the duel ends.
+    this.bankChain()
     this.status = status
     this.outcome = outcome
+  }
+
+  /**
+   * Score this generation's net enemy losses into a chain. Combat deaths only
+   * (storm-excluded upstream), armed only for a window after a player action
+   * and never while the storm is closing — so a chain is legibly the player's
+   * doing, not the ring's culling or ambient two-front grind.
+   */
+  private trackChain(): void {
+    const s = this.state
+    const nf = s.cfg.factions.length
+    const cd = s.combatDeaths
+    const cv = s.converts
+    const rivalCap = cv[RIVAL * nf + PLAYER]
+    const radCap = cv[RADICALS * nf + PLAYER]
+    const perGen =
+      cd[RIVAL] - this.prevCd[RIVAL] +
+      (rivalCap - this.prevRivalCap) +
+      (radCap - this.prevRadCap) -
+      (cd[PLAYER] - this.prevCd[PLAYER])
+    this.prevCd[RIVAL] = cd[RIVAL]
+    this.prevCd[PLAYER] = cd[PLAYER]
+    this.prevRivalCap = rivalCap
+    this.prevRadCap = radCap
+
+    // Score the spike above the rolling baseline (capped per gen), then let the
+    // baseline chase perGen fast — so a burst scores big while a sustained grind
+    // stops scoring within a few gens. Keeps chains rare and legible.
+    const spike = Math.min(CHAIN_SPIKE_CAP, perGen - this.chainBaseline)
+    this.chainBaseline += (perGen - this.chainBaseline) * 0.22
+
+    const armed = s.gen <= this.comboArmedUntil && s.ringInset === 0
+    const combo = this.combo
+    if (armed && spike >= CHAIN_FLOOR) {
+      if (!combo.active) {
+        combo.active = true
+        combo.len = 0
+        combo.total = 0
+      }
+      combo.len++
+      combo.total += spike
+      combo.tier = chainTier(combo.total)
+      if (s.killN > 0) {
+        combo.cx = s.killSumX / s.killN
+        combo.cy = s.killSumY / s.killN
+      }
+      this.comboLow = 0
+    } else if (combo.active) {
+      this.comboLow++
+      if (this.comboLow >= CHAIN_BREAK_GENS || !armed) this.bankChain()
+    }
+  }
+
+  private bankChain(): void {
+    const combo = this.combo
+    if (!combo.active) return
+    const tier = chainTier(combo.total)
+    if (tier >= 0) {
+      this.bankedCombos.push({ tier, total: combo.total, gen: this.state.gen, cx: combo.cx, cy: combo.cy })
+      if (combo.total > this.peakChain) this.peakChain = combo.total
+    }
+    combo.active = false
+    combo.total = 0
+    combo.len = 0
+    combo.tier = -1
+    this.comboLow = 0
   }
 
   /** Absolute cells for a pattern at anchor/rotation — shared by ghost + place. */
@@ -368,6 +496,9 @@ export class Duel {
     const cells = this.patternCells(pattern, ox, oy, rot)
     if (!this.tryPlace(PLAYER, id, ox, oy, rot)) return null
     this.hand[handIdx] = this.draw()
+    // Arm the chain scorer: cascades over the next window are the player's doing.
+    this.comboArmedUntil = this.state.gen + CHAIN_ARM_GENS
+    this.rerollUses = 0 // a placement resets the reroll price
     return cells
   }
 }

@@ -52,8 +52,17 @@ export interface SimState {
   ringInset: number
   /** Cumulative deaths per faction (all causes, storm included). */
   deaths: Int32Array
+  /**
+   * Cumulative COMBAT deaths per faction — excludes storm-eaten cells, so the
+   * Chain scorer never mistakes the ring's culling for a player cascade.
+   */
+  combatDeaths: Int32Array
   /** Cumulative conversions, indexed [from * factions.length + to]. */
   converts: Int32Array
+  /** Combat-death centroid accumulators for THIS step (reset each step). */
+  killN: number
+  killSumX: number
+  killSumY: number
   /** Martyr detonations THIS step: cell index + enemies killed (cleared each step). */
   blasts: Array<{ i: number; kills: number }>
 }

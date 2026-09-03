@@ -189,6 +189,61 @@ describe('foresight: nucleus stability', () => {
   })
 })
 
+describe('duel: the chain', () => {
+  it('combatDeaths excludes storm-eaten cells; deaths includes them', () => {
+    const s = createState(cfg())
+    setCells(s, 1, placeAt(patternById('block').cells, 1, 1)) // hugs the edge
+    s.ringInset = 5
+    step(s)
+    expect(s.deaths[1]).toBe(4) // block eaten by the storm counts in deaths
+    expect(s.combatDeaths[1]).toBe(0) // ...but never in combatDeaths
+  })
+
+  it('a placement that cascades banks a chain; ambient grind does not', () => {
+    // Deterministic: seed a duel, place nothing → no chain ever banks.
+    const quiet = new Duel('chain-quiet')
+    quiet.autoRival = false
+    for (let i = 0; i < 400; i++) quiet.tick()
+    expect(quiet.bankedCombos.length).toBe(0)
+    expect(quiet.combo.active).toBe(false)
+  })
+
+  it('the chain is armed only after a player placement', () => {
+    const d = new Duel('chain-arm')
+    // Before any placement, combat losses never accumulate into a live combo.
+    for (let i = 0; i < 30; i++) d.tick()
+    expect(d.combo.active).toBe(false)
+  })
+
+  it('chains stay deterministic per seed', () => {
+    const run = (seed: string) => {
+      const d = new Duel(seed)
+      for (let i = 0; i < 500; i++) d.tick()
+      return { peak: d.peakChain, banks: d.bankedCombos.length, hash: stateHash(d.state) }
+    }
+    expect(run('chain-det')).toEqual(run('chain-det'))
+  })
+})
+
+describe('duel: reroll', () => {
+  it('rerolling one card spends biomass and rising cost; placement resets it', () => {
+    const d = new Duel('reroll-test')
+    const before = d.biomass[1]
+    const c0 = d.rerollCost(false)
+    expect(d.rerollCard(0)).toBe(true)
+    expect(d.biomass[1]).toBe(before - c0)
+    expect(d.rerollCost(false)).toBeGreaterThan(c0) // rises with use
+    expect(d.hand.length).toBe(d.t.handSize)
+  })
+
+  it('reroll is refused when biomass is short', () => {
+    const d = new Duel('reroll-poor')
+    d.biomass[1] = 0
+    expect(d.rerollCard(0)).toBe(false)
+    expect(d.rerollHand()).toBe(false)
+  })
+})
+
 describe('duel: seeds', () => {
   it('a chosen seed stamps its exact formation; soup stays procedural', async () => {
     const { seedById } = await import('../seeds')

@@ -28,7 +28,11 @@ export function createState(cfg: SimConfig): SimState {
     pops: cfg.factions.map(() => 0),
     ringInset: 0,
     deaths: new Int32Array(nf),
+    combatDeaths: new Int32Array(nf),
     converts: new Int32Array(nf * nf),
+    killN: 0,
+    killSumX: 0,
+    killSumY: 0,
     blasts: [],
   }
 }
@@ -44,7 +48,11 @@ export function cloneState(s: SimState): SimState {
     pops: s.pops.slice(),
     ringInset: s.ringInset,
     deaths: s.deaths.slice(),
+    combatDeaths: s.combatDeaths.slice(),
     converts: s.converts.slice(),
+    killN: s.killN,
+    killSumX: s.killSumX,
+    killSumY: s.killSumY,
     blasts: [...s.blasts],
   }
 }
@@ -82,8 +90,12 @@ export function step(s: SimState): void {
   const y1 = h - inset
   const inSafe = (x: number, y: number): boolean => x >= x0 && x < x1 && y >= y0 && y < y1
   const deaths = s.deaths
+  const combatDeaths = s.combatDeaths
   const converts = s.converts
   s.blasts.length = 0
+  s.killN = 0
+  s.killSumX = 0
+  s.killSumY = 0
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -137,8 +149,13 @@ export function step(s: SimState): void {
         if (d > 0 && (factions[d].rule.birth >> total) & 1) out = d // born normal
       }
       if (cur > 0) {
-        if (out === 0) deaths[cur]++
-        else if (out !== cur) converts[cur * nf + out]++
+        if (out === 0) {
+          deaths[cur]++
+          combatDeaths[cur]++ // in-safe path only → storm deaths never counted
+          s.killN++
+          s.killSumX += x
+          s.killSumY += y
+        } else if (out !== cur) converts[cur * nf + out]++
       }
       next[i] = out
       nextTypes[i] = outType
@@ -188,6 +205,10 @@ export function step(s: SimState): void {
         const j = yy * w + xx
         if (next[j] > 0 && next[j] !== cells[i]) {
           deaths[next[j]]++
+          combatDeaths[next[j]]++
+          s.killN++
+          s.killSumX += xx
+          s.killSumY += yy
           next[j] = 0
           nextTypes[j] = 0
           kills++

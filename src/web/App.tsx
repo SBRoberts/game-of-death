@@ -212,6 +212,25 @@ function StormTrack({ hud, grace, maxInset }: { hud: Hud | null; grace: number; 
   )
 }
 
+/** How far the specimen has strayed from pure Conway, filling toward the
+ *  round's warp cap. The spectral fill is the pure→warped gradient made visible. */
+function WarpMeter({ warp, cap }: { warp: number; cap: number }) {
+  const capShown = Number.isFinite(cap) ? cap : 10
+  const frac = capShown > 0 ? Math.min(1, warp / capShown) : warp > 0 ? 1 : 0
+  return (
+    <div className="warp-group" aria-label={`warp ${warp} of ${capShown}`}>
+      <span className="lbl-xs">WARP</span>
+      <div className={`warp-track ${warp > 0 ? 'lit' : ''}`}>
+        <span className="warp-fill" style={{ width: `${(frac * 100).toFixed(1)}%` }} />
+      </div>
+      <span className="warp-val num">
+        {warp}
+        <span className="warp-cap">/{capShown}</span>
+      </span>
+    </div>
+  )
+}
+
 function ThrottleWell({
   speedIdx,
   onSet,
@@ -862,6 +881,7 @@ export function App() {
         hint: hintText ? { text: hintText, grade: hintGrade } : null,
         reach: selectedRef.current !== null ? duel.radii[PLAYER] : null,
         punch: punchRef.current,
+        warp: duel.playerWarp,
         combo: cb.active && cb.total >= 5 ? { total: cb.total, tier: cb.tier, x: cb.cx, y: cb.cy } : null,
         banner,
       })
@@ -1325,6 +1345,7 @@ export function App() {
             <span className="rlabel">{ROUNDS[round - 1].label}</span>
           </div>
           <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
+          <WarpMeter warp={hud?.warp ?? 0} cap={ROUNDS[round - 1].warpCap} />
         </div>
 
         <div className="island isl-tr">
@@ -1444,6 +1465,7 @@ export function App() {
         <span className="val num">{hud?.gen ?? 0}</span>
       </div>
       <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
+        <WarpMeter warp={hud?.warp ?? 0} cap={ROUNDS[round - 1].warpCap} />
       <Tickers hud={hud} />
     </div>
   )
@@ -1468,6 +1490,7 @@ export function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <RoundPips round={round} cleared={over && hud.status === 'won'} />
           <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
+        <WarpMeter warp={hud?.warp ?? 0} cap={ROUNDS[round - 1].warpCap} />
         </div>
       )}
 

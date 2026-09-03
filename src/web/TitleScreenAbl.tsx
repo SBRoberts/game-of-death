@@ -77,25 +77,41 @@ export function TitleScreenAbl({ onStart, onHowTo }: TitleScreenProps) {
 
     // ── ABLATION HARNESS (scratch file; not shipped) ────────────────────────
     const qp = new URLSearchParams(location.search)
-    const OFF = new Set((qp.get('off') ?? '').split(',').filter(Boolean))
-    const on = (k: string) => !OFF.has(k) && !OFF.has('all')
-    const F = {
-      step: on('step'),
-      bg: on('bg') && on('draw'),
-      cells: on('cells') && on('draw'),
-      glow: on('glow') && on('draw'),
-      chroma: on('chroma') && on('draw'),
-      composite: on('composite') && on('draw'),
-      pointer: on('pointer') && on('draw'),
-      reticle: on('reticle') && on('draw'),
-      marquee: on('marquee') && on('draw'),
-      grain: on('grain') && on('draw'),
-      vignette: on('vignette') && on('draw'),
+    const mk = (off: string) => {
+      const O = new Set(off.split(',').filter(Boolean))
+      const on = (k: string) => !O.has(k) && !O.has('all')
+      return {
+        step: on('step'), bg: on('bg') && on('draw'), cells: on('cells') && on('draw'),
+        glow: on('glow') && on('draw'), chroma: on('chroma') && on('draw'),
+        composite: on('composite') && on('draw'), pointer: on('pointer') && on('draw'),
+        reticle: on('reticle') && on('draw'), marquee: on('marquee') && on('draw'),
+        grain: on('grain') && on('draw'), vignette: on('vignette') && on('draw'),
+      }
     }
-    const HOLD = qp.has('hold') ? parseFloat(qp.get('hold')!) : null
-    const SYNC = qp.get('sync') === '1'
-    const stats: { js: number[]; iv: number[] } = { js: [], iv: [] }
-    ;(window as any).__abl = { stats, F, HOLD, SYNC }
+    const F = mk(qp.get('off') ?? '')
+    const CFG = {
+      hold: qp.has('hold') ? parseFloat(qp.get('hold')!) : (null as number | null),
+      rep: qp.has('rep') ? Math.max(1, parseInt(qp.get('rep')!, 10)) : 1,
+      label: 'A',
+    }
+    const stats: { js: number[]; iv: number[]; pop: number[] } = { js: [], iv: [], pop: [] }
+    ;(window as any).__abl = {
+      stats, F, CFG,
+      set(off: string, hold: number, rep: number, label: string) {
+        Object.assign(F, mk(off)); CFG.hold = hold; CFG.rep = rep; CFG.label = label
+        stats.js.length = 0; stats.iv.length = 0; stats.pop.length = 0
+      },
+      pop: () => { let n = 0; for (let i = 0; i < cur.length; i++) if (cur[i]) n++; return n },
+      geom: () => ({ W, H, cell, gw, gh, cells: gw * gh, dpr, glyphs: glyphs.length,
+        sprite: sprites.you ? `${sprites.you.width}x${sprites.you.height}` : '' }),
+      // Pure-CPU microbenchmark of the automaton: no canvas, no GPU involved.
+      benchStep: (n: number) => {
+        step(); // warm
+        const t = performance.now()
+        for (let k = 0; k < n; k++) step()
+        return (performance.now() - t) / n
+      },
+    }
     let prevTs = 0
 
     // ── grid + layout, rebuilt on resize ─────────────────────────────────────
@@ -339,8 +355,8 @@ export function TitleScreenAbl({ onStart, onHowTo }: TitleScreenProps) {
       const entering = sinceStart < ENTRANCE
       // focusAmount: the rack-focus resolve, 0 (blur) → 1 (sharp). A brief held
       // blur, then a strong pull into razor puncta.
-      const focus = HOLD !== null
-        ? HOLD
+      const focus = CFG.hold !== null
+        ? CFG.hold
         : reduced
           ? 1
           : entering
@@ -377,6 +393,10 @@ export function TitleScreenAbl({ onStart, onHowTo }: TitleScreenProps) {
         }
       }
 
+      let popCount = 0
+      for (let i = 0; i < cur.length; i++) if (cur[i]) popCount++
+
+      for (let _k = 0; _k < CFG.rep; _k++) {
       // ── render ───────────────────────────────────────────────────────────
       // phosphor afterglow: never hard-clear, so life leaves decaying streaks
       if (F.bg) {
@@ -447,11 +467,12 @@ export function TitleScreenAbl({ onStart, onHowTo }: TitleScreenProps) {
       if (F.grain) drawGrain(ctx, W, H, now, reduced)
       if (F.vignette) drawVignette(ctx, W, H)
 
+      }
       // SYNC mode: a 1px readback forces the GPU raster of everything queued
       // this frame to COMPLETE before performance.now() is sampled, so the
       // timed region covers JS + rasterization instead of JS alone.
-      if (SYNC) ctx.getImageData(0, 0, 1, 1)
       stats.js.push(performance.now() - _t0)
+      if (stats.iv.length) stats.pop.push(popCount)
 
       raf = requestAnimationFrame(frame)
     }

@@ -184,6 +184,9 @@ export interface FxState {
   reach: number | null
   /** Bloom/brightness spike this frame (0..1), paired with hit-stop. */
   punch: number
+  /** The player's active WARP — distance from pure Conway. Drives the
+   *  fluorescence escalation: a clean glass slide at 0, glowing + spectral high. */
+  warp: number
   /** Live chain counter climbing over the cascade centroid. */
   combo: { total: number; tier: number; x: number; y: number } | null
   /** A banked-chain callout slamming in over the board. */
@@ -340,7 +343,7 @@ let grain: CanvasPattern | null = null
 let vignette: CanvasGradient | null = null
 let vignetteKey = ''
 
-function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, h: number, punch: number): void {
+function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, h: number, punch: number, warpAmt: number): void {
   if (!bloomCanvas || bloomCanvas.width !== w || bloomCanvas.height !== h) {
     bloomCanvas = document.createElement('canvas')
     bloomCanvas.width = w
@@ -367,10 +370,11 @@ function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, 
   ctx.save()
   ctx.imageSmoothingEnabled = true
   // Two upscale passes: a wide dim halo and a tighter hot one. A hit-stop
-  // punch lifts both so an impact frame flares brighter.
-  ctx.globalAlpha = 0.22 + 0.28 * punch
+  // punch lifts both so an impact frame flares brighter; warp raises the whole
+  // slide's fluorescence as the specimen strays from Conway.
+  ctx.globalAlpha = 0.22 + 0.28 * punch + 0.16 * warpAmt
   ctx.drawImage(bloomCanvas, -CELL, -CELL, (w + 2) * CELL, (h + 2) * CELL)
-  ctx.globalAlpha = 0.4 + 0.4 * punch
+  ctx.globalAlpha = 0.4 + 0.4 * punch + 0.22 * warpAmt
   ctx.drawImage(bloomCanvas, 0, 0, w * CELL, h * CELL)
   ctx.restore()
 }
@@ -604,11 +608,12 @@ export function render(
   const { width: w, height: h } = s.cfg
   const W = w * CELL
   const H = h * CELL
+  const warpAmt = Math.min(1, fx.warp / 12) // 0 = pure Conway, 1 = fully strayed
 
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, W, H)
 
-  drawBloom(ctx, s.cells, w, h, fx.punch)
+  drawBloom(ctx, s.cells, w, h, fx.punch, warpAmt)
 
   // Photobleached remnants: alive last generation, dead now.
   for (let i = 0; i < s.cells.length; i++) {
@@ -807,6 +812,22 @@ export function render(
   }
   ctx.fillStyle = vignette
   ctx.fillRect(0, 0, W, H)
+
+  // Warp autofluorescence: as the specimen strays from Conway, a faint spectral
+  // haze breathes at the slide's edges and the whole field warms — clean glass
+  // in round 1, glowing by round 3. Deterministic from warp; cheap additive.
+  if (warpAmt > 0.01) {
+    const pulse = 0.55 + 0.45 * Math.sin(fx.now / 900)
+    const a = warpAmt * (0.5 + 0.5 * pulse)
+    // hue shifts green → cyan → violet as warp climbs (further from Conway)
+    const g2 = ctx.createRadialGradient(W / 2, H * 0.5, H * 0.3, W / 2, H * 0.5, H * 0.98)
+    g2.addColorStop(0, 'rgba(0,0,0,0)')
+    g2.addColorStop(1, `rgba(${Math.round(90 + warpAmt * 90)},${Math.round(120 - warpAmt * 40)},${Math.round(150 + warpAmt * 90)},${(a * 0.16).toFixed(3)})`)
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.fillStyle = g2
+    ctx.fillRect(0, 0, W, H)
+    ctx.globalCompositeOperation = 'source-over'
+  }
 
   // Reach ring: the legal ground, lit while a card is armed.
   if (fx.reach !== null && duel.status === 'running') {

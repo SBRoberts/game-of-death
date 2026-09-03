@@ -235,3 +235,20 @@ This slice needs **zero to one** new sim flags, exercises every currency and the
 4. **Chests** — silent queue; contents keyed by chestIndex (timing never changes rewards). HUD shows a **queued-chest count indicator**; clear feedback on open. Optional auto-pause-on-chest toggle for new players.
 5. **Sell** — refunds half the BASE price; invested chest FACETS are forfeited (higher investment = larger sacrifice = the risk). Sell value does NOT scale with facet investment. One-number tunable if too harsh.
 6. **Free starters** — The Vector (reach-rush) and The Scavenger (income-capture), sharpened by opposite pool biases + signature cards.
+
+---
+
+## 12. v1 SHIPPED (branch `warp-redesign`, 2026-09)
+
+The lean v1 is built across 6 phases (all test-guarded; determinism audit
+`d8ba6440` unchanged; 50 tests green):
+
+- **P0** `warp()` scalar + `foldLoadout(warpCap)` gate + `rebuildPlayer()` + harvest counters (sim).
+- **P1** base player loadout = `[]` — every run opens provably pure B3/S23 (test-guarded).
+- **P2** in-run plasmid chests: harvest radicals → pick 1-of-3 mutagens (`ChestPicker`), stack into the run build.
+- **P3** the between-round Culture shop: spend PLASM on a rarity-tiered catalog (`Shop`, `rollShop`).
+- **P4** warp made visible: a spectral WARP meter + board glow that intensify as you stray.
+- **P5** the Culture Lab: capped baseline perks + BSL-1..4 difficulty (ash multiplier) + seeds; the equip-genes-globally system retired.
+- **P6** `draftbalance` harness: no drafted build clears >54% (nothing trivializes); average balanced play ~54%, greed punished by warp-cap dormancy.
+
+**Deferred (v1.1+):** the 3 legendary tuple flags (laser/chain/strain) + their content; full character roster (only 2 free starters modelled — seeds still carry formation identity, not yet full classes); ascension beyond BSL-4; per-cluster chests + boss chests; sell-back in the shop; novel legendary emission channels.

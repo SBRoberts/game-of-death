@@ -32,5 +32,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/sim/__tests__/**/*.test.ts'],
+    // The determinism proofs run thousands of AI-driven ticks across several
+    // duels — legitimately ~5s each; give headroom so parallel load can't flake
+    // them past the 5s default.
+    testTimeout: 20000,
   },
 })

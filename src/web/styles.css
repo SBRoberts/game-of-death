@@ -3354,3 +3354,234 @@ canvas {
     animation: none !important;
   }
 }
+
+/* ── the culture lab (meta: BSL + perks + seeds) ───────────────────────────── */
+.genome-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 6, 10, 0.86);
+  animation: chest-fade 200ms ease-out;
+}
+.lab {
+  width: min(980px, 96vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 26px 20px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.lab-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.lab-head .gtitle {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--you);
+  text-shadow: 0 0 16px rgba(66, 245, 155, 0.35);
+}
+.lab-head .ash {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lab-head .ash .val {
+  font-size: 16px;
+  color: var(--gold);
+  font-weight: 700;
+}
+.lab-head .close {
+  font-size: 15px;
+  color: var(--faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.lab-head .close:hover {
+  color: var(--text);
+}
+.lab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lab-shead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.lab-note {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.lab-complete {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--you);
+}
+
+/* BSL cards */
+.bsl-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.bsl-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 13px 12px;
+  text-align: left;
+  border-radius: 11px;
+  background: rgba(10, 15, 22, 0.7);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.2, 0.9, 0.3, 1), border-color 160ms, box-shadow 200ms;
+}
+.bsl-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+  border-color: var(--dim);
+}
+.bsl-card.selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 22px rgba(232, 196, 99, 0.28);
+}
+.bsl-card.locked {
+  opacity: 0.42;
+  cursor: default;
+}
+.bsl-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.bsl-blurb {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--dim);
+  flex: 1;
+}
+.bsl-mult {
+  font-size: 11px;
+  color: var(--gold);
+  font-weight: 600;
+}
+.bsl-lock {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  color: var(--faint);
+}
+
+/* perk cards */
+.perk-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.perk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px;
+  border-radius: 11px;
+  background: rgba(10, 15, 22, 0.66);
+  border: 1px solid var(--line);
+}
+.perk-card.maxed {
+  border-color: rgba(66, 245, 155, 0.4);
+}
+.perk-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.perk-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.perk-pips {
+  display: flex;
+  gap: 3px;
+}
+.perk-pips i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--etch);
+}
+.perk-pips i.on {
+  background: var(--you);
+  box-shadow: 0 0 6px rgba(66, 245, 155, 0.5);
+}
+.perk-desc {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--dim);
+  flex: 1;
+}
+.perk-buy {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  background: rgba(66, 245, 155, 0.08);
+  border: 1px solid rgba(66, 245, 155, 0.3);
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms;
+}
+.perk-buy:hover:not(:disabled) {
+  background: rgba(66, 245, 155, 0.16);
+  border-color: var(--you);
+}
+.perk-buy:disabled {
+  opacity: 0.42;
+  cursor: default;
+  background: transparent;
+}
+.perk-buy .num {
+  color: var(--gold);
+}
+
+.lab-foot {
+  font-size: 10.5px;
+  color: var(--faint);
+  text-align: center;
+  margin-top: 2px;
+}
+
+@media (max-width: 820px) {
+  .bsl-row,
+  .perk-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .genome-backdrop,
+  .bsl-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}

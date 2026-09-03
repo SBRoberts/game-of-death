@@ -37,6 +37,12 @@ export interface MetaState {
   best: number
   /** Furthest round ever reached (1-based) — the progress stat. */
   bestRound: number
+  /** Capped baseline perks: perk key → owned level (a short competence ramp
+   *  that plateaus; ash beyond the cap buys only breadth + difficulty). */
+  perks: Record<string, number>
+  /** Chosen Biosafety Level for the next run (1–4), and the highest unlocked. */
+  bsl: number
+  bslMax: number
 }
 
 export function loadMeta(): MetaState {
@@ -50,6 +56,9 @@ export function loadMeta(): MetaState {
     challenges: [],
     best: 0,
     bestRound: 0,
+    perks: {},
+    bsl: 1,
+    bslMax: 1,
   })
   try {
     const raw = localStorage.getItem(KEY)
@@ -77,6 +86,9 @@ export function loadMeta(): MetaState {
         challenges: Array.isArray(m.challenges) ? m.challenges : [],
         best: m.best! | 0,
         bestRound: m.bestRound! | 0,
+        perks: (m.perks as Record<string, number>) ?? {},
+        bsl: Math.max(1, Math.min(4, m.bsl! | 0 || 1)),
+        bslMax: Math.max(1, Math.min(4, m.bslMax! | 0 || 1)),
       }
     }
   } catch {
@@ -288,4 +300,90 @@ export function claimChallenge(m: MetaState, seedId: string): { meta: MetaState;
     meta: save({ ...m, ash: m.ash + bounty, challenges: [...m.challenges, seedId] }),
     bounty,
   }
+}
+
+// ── capped baseline perks (a short competence ramp that plateaus) ────────────
+export interface PerkDef {
+  key: string
+  name: string
+  desc: string
+  costs: number[] // ash per level; length = cap
+}
+
+export const PERKS: readonly PerkDef[] = [
+  { key: 'reserve', name: 'Reserve Culture', desc: 'Begin each run with banked PLASM for the first shop.', costs: [40, 90, 150] },
+  { key: 'sight', name: 'Wide Assay', desc: 'Plasmid chests reveal a fourth option.', costs: [120] },
+  { key: 'rerolls', name: 'Free Reagents', desc: 'Begin each shop visit with free rerolls.', costs: [55, 130] },
+  { key: 'vitality', name: 'Vitality', desc: 'A small permanent lift to your income rate.', costs: [45, 110, 200] },
+]
+
+// Cumulative effect value at each level.
+const PERK_VALUE: Record<string, number[]> = {
+  reserve: [8, 16, 24],
+  sight: [1],
+  rerolls: [1, 2],
+  vitality: [0.004, 0.008, 0.012],
+}
+
+export const perkDef = (key: string): PerkDef => PERKS.find((p) => p.key === key)!
+export const perkLevel = (m: MetaState, key: string): number => m.perks[key] ?? 0
+export const perkCap = (key: string): number => perkDef(key).costs.length
+export function perkCost(m: MetaState, key: string): number | null {
+  const lvl = perkLevel(m, key)
+  return lvl < perkCap(key) ? perkDef(key).costs[lvl] : null
+}
+export function buyPerk(m: MetaState, key: string): MetaState {
+  const cost = perkCost(m, key)
+  if (cost === null || m.ash < cost) return m
+  return save({ ...m, ash: m.ash - cost, perks: { ...m.perks, [key]: perkLevel(m, key) + 1 } })
+}
+/** True once every perk is maxed — the plateau; ash now buys only breadth + BSL. */
+export const perksMaxed = (m: MetaState): boolean => PERKS.every((p) => perkLevel(m, p.key) >= p.costs.length)
+
+const perkVal = (m: MetaState, key: string): number => {
+  const lvl = perkLevel(m, key)
+  return lvl > 0 ? PERK_VALUE[key][lvl - 1] : 0
+}
+export interface PerkEffects {
+  startPlasm: number
+  chestOptions: number
+  freeRerolls: number
+  incomeBonus: number
+}
+export function perkEffects(m: MetaState): PerkEffects {
+  return {
+    startPlasm: perkVal(m, 'reserve'),
+    chestOptions: 3 + perkVal(m, 'sight'),
+    freeRerolls: perkVal(m, 'rerolls'),
+    incomeBonus: perkVal(m, 'vitality'),
+  }
+}
+
+// ── BSL: the pre-run difficulty selector (harder = more ash) ─────────────────
+export interface BslDef {
+  level: number
+  label: string
+  blurb: string
+  ashMult: number
+  aiSamplesAdd: number
+  aiActEveryMul: number
+  ringGraceMul: number
+}
+export const BSL: readonly BslDef[] = [
+  { level: 1, label: 'BSL-1 · Contained', blurb: 'A calm specimen. Standard threat.', ashMult: 1.0, aiSamplesAdd: 0, aiActEveryMul: 1, ringGraceMul: 1 },
+  { level: 2, label: 'BSL-2 · Hazardous', blurb: 'Sharper rival, sooner storm. +40% ash.', ashMult: 1.4, aiSamplesAdd: 3, aiActEveryMul: 0.85, ringGraceMul: 0.85 },
+  { level: 3, label: 'BSL-3 · Virulent', blurb: 'Ruthless rival, fast storm. +90% ash.', ashMult: 1.9, aiSamplesAdd: 5, aiActEveryMul: 0.72, ringGraceMul: 0.72 },
+  { level: 4, label: 'BSL-4 · Lethal', blurb: 'The specimen fights to kill. +150% ash.', ashMult: 2.5, aiSamplesAdd: 8, aiActEveryMul: 0.6, ringGraceMul: 0.6 },
+]
+export const bslDef = (n: number): BslDef => BSL[Math.max(0, Math.min(3, n - 1))]
+export function selectBsl(m: MetaState, n: number): MetaState {
+  if (n < 1 || n > m.bslMax) return m
+  return save({ ...m, bsl: n })
+}
+/** On a full run clear, unlock the next BSL if you cleared at your ceiling. */
+export function recordBslClear(m: MetaState): { meta: MetaState; unlocked: number } {
+  if (m.bsl === m.bslMax && m.bslMax < 4) {
+    return { meta: save({ ...m, bslMax: m.bslMax + 1 }), unlocked: m.bslMax + 1 }
+  }
+  return { meta: m, unlocked: 0 }
 }

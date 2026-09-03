@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Duel,
-  GENES,
+  SEEDS,
   PLAYER,
   RIVAL,
   ROUNDS,
@@ -41,18 +41,20 @@ import { sfx, type SfxName } from './audio'
 import {
   ashBreakdown,
   ashFor,
-  buyGene,
   buySeed,
-  buySlot,
   claimChallenge,
   earnAsh,
   loadMeta,
-  nextSlotCost,
   nextUnlockGap,
   recordRun,
   selectSeed,
-  toggleEquip,
-  upgradeCost,
+  perkEffects,
+  perkCost,
+  PERKS,
+  buyPerk,
+  selectBsl,
+  bslDef,
+  recordBslClear,
 } from './meta'
 import { seedById, rollShop, shopRerollCost, type GeneChoice, type ChestOption, type ShopItem } from '../sim'
 
@@ -361,9 +363,14 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- loadout snapshots at run start
   const duel = useMemo(() => {
     const r = ROUNDS[round - 1]
+    const b = bslDef(metaRef.current.bsl) // difficulty scales the rival + storm
     const d = new Duel(
       round === 1 ? seed : `${seed}-r${round}`,
-      { aiSamples: r.aiSamples, aiActEvery: r.aiActEvery },
+      {
+        aiSamples: r.aiSamples + b.aiSamplesAdd,
+        aiActEvery: Math.max(6, Math.round(r.aiActEvery * b.aiActEveryMul)),
+        ringGrace: Math.round(TUNING.ringGrace * b.ringGraceMul),
+      },
       [], // no equipped start-power — power is earned in-run
       r.rivalLoadout,
       metaRef.current.seedSel,
@@ -372,6 +379,7 @@ export function App() {
     d.warpCap = r.warpCap
     d.runLoadout = runLoadoutRef.current
     d.rebuildPlayer()
+    d.incomeScales[PLAYER] += perkEffects(metaRef.current).incomeBonus // Vitality perk
     return d
   }, [seed, run, round])
   duelRef.current = duel
@@ -471,7 +479,7 @@ export function App() {
 
   const newRun = useCallback(() => {
     runLoadoutRef.current = [] // wipe the drafted build — every run starts pure
-    runPlasmRef.current = 0
+    runPlasmRef.current = perkEffects(metaRef.current).startPlasm // Reserve Culture perk
     setSeed(randomSeed())
     setRun((r) => r + 1)
     setRound(1)
@@ -603,8 +611,12 @@ export function App() {
     },
     [shopBought],
   )
+  const shopRerollEffCost = (rerolls: number) => {
+    const free = perkEffects(metaRef.current).freeRerolls
+    return rerolls < free ? 0 : shopRerollCost(rerolls - free)
+  }
   const rerollShop = useCallback(() => {
-    const cost = shopRerollCost(shopRerolls)
+    const cost = shopRerollEffCost(shopRerolls)
     if (runPlasmRef.current < cost) return
     runPlasmRef.current -= cost
     const r = shopRerolls + 1
@@ -794,7 +806,12 @@ export function App() {
         // A round deeper than you've ever reached pays a frontier bounty — read
         // the pre-update record so win and loss are scored the same way.
         const frontier = round > metaRef.current.bestRound
-        const base = ashFor(duel, runClear, { newFrontier: frontier })
+        // BSL difficulty multiplies the payout: harder specimen, more research.
+        const bslMult = bslDef(metaRef.current.bsl).ashMult
+        const base = Math.round(ashFor(duel, runClear, { newFrontier: frontier }) * bslMult)
+        // Clearing the full gauntlet at your ceiling unlocks the next BSL.
+        const bslUnlock =
+          runClear && metaRef.current.bsl === metaRef.current.bslMax && metaRef.current.bslMax < 4
         // A challenge seed pays a one-time bounty the first time it's cleared.
         const cseed = seedById(duel.colonySeed)
         const challengeHit = won && !!cseed.challenge && !metaRef.current.challenges.includes(duel.colonySeed)
@@ -808,11 +825,12 @@ export function App() {
           const earned = earnAsh(m, base)
           const paid = challengeHit ? claimChallenge(earned, duel.colonySeed).meta : earned
           const rec = recordRun(paid, peak, round)
+          const cleared = runClear ? recordBslClear(rec.meta).meta : rec.meta
           setRunRecord({ peak, newBest: rec.newBest, newFrontier: rec.newFrontier })
-          return rec.meta
+          return cleared
         })
         // Speak any record so it reaches assistive tech, not just the visual badge.
-        const records = `${newBest ? ` New best cascade: ${peak}.` : ''}${frontier ? ' New frontier reached — deepest round yet.' : ''}`
+        const records = `${newBest ? ` New best cascade: ${peak}.` : ''}${frontier ? ' New frontier reached — deepest round yet.' : ''}${bslUnlock ? ` Biosafety Level ${metaRef.current.bslMax + 1} unlocked.` : ''}`
         setAnnounce(
           won
             ? `${runClear ? 'Run complete — the universe yields.' : `Round ${round} cleared.`} ${base + bounty} ash earned.${challengeHit ? ` Challenge complete: the ${cseed.name} paid a ${bounty} ash bounty.` : ''}${records}`
@@ -1068,16 +1086,14 @@ export function App() {
 
   // ── derived bits shared by the mounts ────────────────────────────────────
   const over = hud !== null && hud.status !== 'running'
-  const canShop = useMemo(() => {
-    const slotCost = nextSlotCost(meta)
-    return (
-      (slotCost !== null && meta.ash >= slotCost) ||
-      GENES.some((g) => {
-        const c = upgradeCost(meta, g.key)
+  const canShop = useMemo(
+    () =>
+      PERKS.some((p) => {
+        const c = perkCost(meta, p.key)
         return c !== null && meta.ash >= c
-      })
-    )
-  }, [meta])
+      }) || SEEDS.some((s) => !meta.seedsOwned.includes(s.id) && meta.ash >= s.ashCost),
+    [meta],
+  )
   const runClear = over && hud.status === 'won' && round === ROUNDS.length
   const coachStep = coached ? 0 : selected === null && !placedOnce ? 1 : !placedOnce ? 2 : 3
 
@@ -1183,7 +1199,7 @@ export function App() {
     chestOpen && duel.pendingChests > 0 ? (
       <ChestPicker
         key={duel.chestIndex}
-        options={duel.chestOptions(duel.chestIndex)}
+        options={duel.chestOptions(duel.chestIndex, perkEffects(meta).chestOptions)}
         remaining={duel.pendingChests}
         onPick={pickChest}
         onClose={() => setChestOpen(false)}
@@ -1194,7 +1210,7 @@ export function App() {
       <Shop
         stock={shopStock}
         plasm={Math.floor(runPlasmRef.current)}
-        rerollCost={shopRerollCost(shopRerolls)}
+        rerollCost={shopRerollEffCost(shopRerolls)}
         nextCap={ROUNDS[round]?.warpCap ?? Infinity}
         bought={shopBought}
         nextRoundLabel={ROUNDS[round]?.label ?? ''}
@@ -1266,11 +1282,10 @@ export function App() {
   const genomeEl = showGenome && (
     <Genome
       meta={meta}
-      onBuySlot={() => setMeta(buySlot)}
-      onBuyGene={(k) => setMeta((m) => buyGene(m, k))}
-      onToggleEquip={(k) => setMeta((m) => toggleEquip(m, k))}
       onBuySeed={(id) => setMeta((m) => buySeed(m, id))}
       onSelectSeed={(id) => setMeta((m) => selectSeed(m, id))}
+      onBuyPerk={(k) => setMeta((m) => buyPerk(m, k))}
+      onSelectBsl={(n) => setMeta((m) => selectBsl(m, n))}
       onClose={() => setShowGenome(false)}
     />
   )

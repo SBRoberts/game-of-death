@@ -262,7 +262,7 @@ export class Duel {
    * draftable gene; at least one is active under the current cap so every chest
    * has immediate value, the rest activate as later rounds raise the cap.
    */
-  chestOptions(index: number): ChestOption[] {
+  chestOptions(index: number, count = 3): ChestOption[] {
     const rng = rngFrom(this.seed, `chest:${index}`)
     const nowWarp = this.playerWarp
     const toOption = (key: string, level: number): ChestOption => {
@@ -292,7 +292,7 @@ export class Duel {
     const active = cands.filter((c) => c.activeNow)
     const picks: ChestOption[] = active.length ? [active[0]] : []
     for (const c of cands) {
-      if (picks.length >= 3) break
+      if (picks.length >= count) break
       if (!picks.some((p) => p.key === c.key)) picks.push(c)
     }
     return picks

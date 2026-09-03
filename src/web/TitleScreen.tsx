@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { sfx } from './audio'
 
 /**
- * The title screen — "FIRST LIGHT / CAUSE OF DEATH".
+ * The title screen — "FIRST LIGHT".
  *
- * You focus a microscope onto a black slide and chaos snaps into the game's
- * name, spelled in living GFP cells on a real B3/S23 board. The specimen then
- * dies under an entropy flatline, gets rubber-stamped with its CAUSE OF DEATH,
- * and resurrects in a salvo of light — forever. The cursor is a pipette that
+ * A microscope rack-focus pulls the game's name out of chromatic-fringed blur
+ * into razor GFP puncta, spelled in living cells on a real B3/S23 board. Then
+ * the specimen simply lives: the title boils on a self-healing substrate while
+ * a sparse green-vs-red war drifts around it, and the cursor is a pipette that
  * seeds glowing life. One canvas, additive fluorescence bloom, no assets.
  * Inherits nothing but the palette; respects prefers-reduced-motion.
  */
@@ -26,24 +26,18 @@ const FONT: Record<string, string[]> = {
   ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
 }
 
-// Fluorescence palette (GFP / mCherry / DAPI), plus the necrosis ramp.
+// Fluorescence palette (GFP / mCherry / DAPI).
 const GFP = [66, 245, 155] as const // your colony — life, the hero
 const MCHERRY = [255, 83, 64] as const // the rival — danger, casualty
 const DAPI = [127, 150, 255] as const // free radicals, UI chrome
-const AMBER = [232, 176, 84] as const // dying
-const ASH = [120, 120, 132] as const // dead
-
-const CAUSES = ['OVERPOPULATION', 'ISOLATION', 'ENTROPY', 'EXSANGUINATION', 'OSCILLATOR DECAY', 'STARVATION']
 
 const rgb = (c: readonly number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
-const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
 interface GlyphCell {
   x: number
   y: number
-  col: number // grid column, for left-to-right necrosis/rebirth ordering
 }
 
 /** Bake a soft radial punctum sprite (core → transparent) for additive bloom. */
@@ -69,13 +63,6 @@ interface TitleScreenProps {
   onHowTo: () => void
 }
 
-// Loop phase durations (ms), after the one-time entrance.
-const T_LIFE = 6600
-const T_DEATH = 1900
-const T_REBIRTH = 2100
-const T_SALVO = 1700
-const T_LOOP = T_LIFE + T_DEATH + T_REBIRTH + T_SALVO
-
 export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [muted, setMuted] = useState(sfx.muted)
@@ -99,7 +86,6 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
     let nxt = new Uint8Array(0)
     let mask = new Uint8Array(0) // 1 where a glyph cell lives (healed to green)
     let glyphs: GlyphCell[] = []
-    let centers: { cx: number; cy: number }[] = []
     let colMin = 0
     let colMax = 1
     let rowMin = 0
@@ -114,21 +100,12 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       for (const ch of text) {
         const glyph = FONT[ch] ?? FONT[' ']
         if (ch !== ' ') {
-          const before = glyphs.length
           for (let gy = 0; gy < 7; gy++)
             for (let gx = 0; gx < 5; gx++)
               if (glyph[gy][gx] === '1')
                 for (let sy = 0; sy < s; sy++)
-                  for (let sx = 0; sx < s; sx++) {
-                    const x = cx + gx * s + sx
-                    const y = oy + gy * s + sy
-                    glyphs.push({ x, y, col: x })
-                  }
-          const slice = glyphs.slice(before)
-          centers.push({
-            cx: slice.reduce((a, c) => a + c.x, 0) / slice.length,
-            cy: slice.reduce((a, c) => a + c.y, 0) / slice.length,
-          })
+                  for (let sx = 0; sx < s; sx++)
+                    glyphs.push({ x: cx + gx * s + sx, y: oy + gy * s + sy })
         }
         cx += (5 + 1) * s
       }
@@ -151,7 +128,6 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       nxt = new Uint8Array(gw * gh)
       mask = new Uint8Array(gw * gh)
       glyphs = []
-      centers = []
 
       // Title: two lines, scaled to fill ~62% of width, sitting a little high.
       const lineChars = 8 // "THE GAME" / "OF DEATH"
@@ -176,9 +152,6 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       sprites = {
         you: bakeSprite(GFP, cell),
         rival: bakeSprite(MCHERRY, cell),
-        radical: bakeSprite(DAPI, cell),
-        amber: bakeSprite(AMBER, cell),
-        ash: bakeSprite(ASH, cell),
         white: bakeSprite([235, 252, 255], cell),
       }
       cellBuf = document.createElement('canvas')
@@ -329,97 +302,41 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       }
     }
 
-    // ── the loop ─────────────────────────────────────────────────────────────
+    // ── the loop: a one-time rack-focus reveal, then the specimen simply lives ─
     const t0 = performance.now()
     const ENTRANCE = reduced ? 0 : 2400
     let last = t0
     let simAcc = 0
-    let curCause = CAUSES[0]
-    let prevPhase = ''
-    // salvo particles: light streaks fired from the title on resurrection
-    const parts: { x: number; y: number; vx: number; vy: number; life: number }[] = []
 
     let raf = 0
     const frame = (now: number) => {
       const dtMs = Math.min(50, now - last)
       last = now
       const sinceStart = now - t0
-      // Debug hook: window.__titleFreeze = <loopT ms> pins the loop for screenshots.
-      const frz = (window as { __titleFreeze?: number }).__titleFreeze
-      const frozen = typeof frz === 'number'
-      const entering = !frozen && sinceStart < ENTRANCE
+      const entering = sinceStart < ENTRANCE
       // focusAmount: the rack-focus resolve, 0 (blur) → 1 (sharp). A brief held
       // blur, then a strong pull into razor puncta.
-      const focus =
-        reduced || frozen
-          ? 1
-          : entering
-            ? easeOut(Math.max(0, Math.min(1, (sinceStart - 300) / (ENTRANCE - 900))))
-            : 1
+      const focus = reduced
+        ? 1
+        : entering
+          ? easeOut(Math.max(0, Math.min(1, (sinceStart - 300) / (ENTRANCE - 900))))
+          : 1
 
-      // Loop phase (after the entrance settles).
-      const loopT = frozen ? frz : reduced ? 0 : entering ? 0 : (sinceStart - ENTRANCE) % T_LOOP
-      let phase: 'life' | 'death' | 'rebirth' | 'salvo' = 'life'
-      let pT = 0
-      if (!frozen && (reduced || entering)) {
-        phase = 'life'
-      } else if (loopT < T_LIFE) {
-        phase = 'life'
-        pT = loopT / T_LIFE
-      } else if (loopT < T_LIFE + T_DEATH) {
-        phase = 'death'
-        pT = (loopT - T_LIFE) / T_DEATH
-      } else if (loopT < T_LIFE + T_DEATH + T_REBIRTH) {
-        phase = 'rebirth'
-        pT = (loopT - T_LIFE - T_DEATH) / T_REBIRTH
-      } else {
-        phase = 'salvo'
-        pT = (loopT - T_LIFE - T_DEATH - T_REBIRTH) / T_SALVO
-      }
-
-      // Phase transitions.
-      if (phase !== prevPhase) {
-        if (phase === 'death') {
-          curCause = CAUSES[Math.floor(rng() * CAUSES.length)]
-          sfx.play('storm')
-        }
-        if (phase === 'rebirth') cur.fill(0)
-        if (phase === 'salvo') {
-          // the title is fully reborn now — heal the glyph substrate so it reads
-          // solid from frame one (rebirth left cur all-zero)
-          for (const c of glyphs) cur[c.y * gw + c.x] = 1
-          // fire a salvo of light from every glyph, radiating outward
-          parts.length = 0
-          const cx = (colMin + colMax) / 2
-          for (const g of centers) {
-            for (let k = 0; k < 5; k++) {
-              const ang = Math.atan2(g.cy - gh * 0.42, g.cx - cx) + (rng() - 0.5) * 1.2
-              const sp = 0.5 + rng() * 1.1
-              parts.push({ x: g.cx, y: g.cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 0.2, life: 1 })
-            }
-          }
-          sfx.play('win')
-        }
-        if (phase === 'life' && prevPhase === 'salvo') seedLife()
-        prevPhase = phase
-      }
-
-      // Advance the automaton (life + a gentle boil under salvo).
-      if (!reduced && (phase === 'life' || phase === 'salvo')) {
+      // Advance the automaton — the title boils on its self-healing substrate
+      // while a sparse green-vs-red war drifts around it.
+      if (!reduced) {
         simAcc += dtMs
         const stepMs = 82
         let guard = 0
         while (simAcc >= stepMs && guard++ < 3) {
           simAcc -= stepMs
           step()
-          if (phase === 'life') {
-            // rival probes from the right edge; a little stray drift keeps the
-            // war alive without crowding the title
-            seedCell(gw - 2, 2 + Math.floor(rng() * (gh - 4)), 2)
-            if (rng() < 0.6) seedCell(1 + Math.floor(rng() * (gw - 2)), 1 + Math.floor(rng() * (gh - 2)), rng() < 0.4 ? 2 : 1)
-          }
+          // rival probes from the right edge; a little stray drift keeps the war
+          // alive without crowding the title
+          seedCell(gw - 2, 2 + Math.floor(rng() * (gh - 4)), 2)
+          if (rng() < 0.6) seedCell(1 + Math.floor(rng() * (gw - 2)), 1 + Math.floor(rng() * (gh - 2)), rng() < 0.4 ? 2 : 1)
         }
-      } else if (reduced) {
+      } else {
         // barely-breathing boil for reduced motion
         simAcc += dtMs
         if (simAcc > 500) {
@@ -440,52 +357,26 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
         bctx.globalCompositeOperation = 'source-over'
         bctx.clearRect(0, 0, W, H)
         bctx.globalCompositeOperation = 'lighter'
-        const deathX = phase === 'death' ? lerp(colMin - 2, colMax + 3, easeInOut(pT)) : 0
-        const revealX = phase === 'rebirth' ? lerp(colMin - 1, colMax + 1, easeOut(pT)) : colMax + 1
         // scale of each punctum, driven by the focus pull (big+soft → small+sharp)
         for (let i = 0; i < cur.length; i++) {
           const v = cur[i]
+          if (!v) continue
           const isGlyph = mask[i]
-          if (!v && !(phase === 'rebirth' && isGlyph)) continue
           const x = i % gw
           const y = (i / gw) | 0
-          let sprite = v === 2 ? sprites.rival : v === 1 ? sprites.you : sprites.you
-          let a = isGlyph ? 1 : 0.4
-
-          if (phase === 'death' && isGlyph) {
-            const d = deathX - x
-            if (d > 5) continue // swept away
-            else if (d > 0) {
-              sprite = d > 2.5 ? sprites.ash : sprites.amber
-              a = 1 - d / 6
-            }
-          }
-          if (phase === 'rebirth') {
-            if (isGlyph) {
-              if (x > revealX) continue
-              sprite = sprites.you
-              const pop = Math.max(0, 1 - (revealX - x) / 4)
-              a = 0.5 + 0.5 * pop
-            } else if (v) {
-              // drifting seed reagents during regeneration — stable per-cell tint
-              // (a hash, not rng(), so it doesn't flicker or touch the sim stream)
-              sprite = (x + y) & 1 ? sprites.radical : sprites.rival
-              a = 0.5
-            }
-          }
-
+          const sprite = v === 2 ? sprites.rival : sprites.you
           const px = x * cell + cell / 2
           const py = y * cell + cell / 2
           const scale = lerp(4.4, 1, focus) // blurred discs contract into sharp puncta
           // glyph puncta run a touch bigger + brighter so the word owns the field
           const size = cell * scale * (isGlyph ? 1.16 : 0.9)
-          bctx.globalAlpha = a * lerp(0.5, 1, focus)
+          bctx.globalAlpha = (isGlyph ? 1 : 0.4) * lerp(0.5, 1, focus)
           bctx.drawImage(sprite, px - size / 2, py - size / 2, size, size)
         }
         bctx.globalAlpha = 1
 
         // composite the bloom buffer to the screen with chromatic aberration
-        // (fat RGB fringing during the focus pull, collapsing to a hairline)
+        // (fat RGB fringing during the focus pull, collapsing to nothing)
         const split = lerp(13, 0.6, focus) * (W / 1440)
         ctx.globalCompositeOperation = 'lighter'
         // soft oversized glow blit (cheap gaussian)
@@ -504,25 +395,6 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
         ctx.globalCompositeOperation = 'source-over'
       }
 
-      // salvo light streaks (drawn additively with their own trails)
-      if (phase === 'salvo') {
-        ctx.globalCompositeOperation = 'lighter'
-        for (const p of parts) {
-          p.x += p.vx
-          p.y += p.vy
-          p.vy += 0.012
-          p.life -= 0.016
-          if (p.life <= 0) continue
-          const px = p.x * cell
-          const py = p.y * cell
-          const s2 = cell * (1 + p.life * 2)
-          ctx.globalAlpha = p.life
-          ctx.drawImage(sprites.white, px - s2 / 2, py - s2 / 2, s2, s2)
-        }
-        ctx.globalAlpha = 1
-        ctx.globalCompositeOperation = 'source-over'
-      }
-
       // the pipette tip: a bright bloom that follows the cursor
       if (pointerX >= 0 && sprites.white) {
         ctx.globalCompositeOperation = 'lighter'
@@ -536,7 +408,6 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       // ── eyepiece chrome ────────────────────────────────────────────────────
       drawReticle(ctx, W, H, now, focus, reduced)
       drawMarquee(ctx, marqueePts, now, reduced)
-      if (phase === 'death') drawStamp(ctx, W, H, pT, curCause)
       drawGrain(ctx, W, H, now, reduced)
       drawVignette(ctx, W, H)
 
@@ -680,34 +551,6 @@ function drawMarquee(
     ctx.fill()
   }
   ctx.globalCompositeOperation = 'source-over'
-}
-
-let stampAngle = 0
-function drawStamp(ctx: CanvasRenderingContext2D, W: number, H: number, pT: number, cause: string) {
-  if (pT < 0.32) return
-  const t = Math.min(1, (pT - 0.32) / 0.18)
-  const cx = W / 2
-  const cy = H * 0.42
-  if (t < 0.02) stampAngle = -0.18
-  const scale = lerp(1.9, 1, easeOut(t))
-  const alpha = pT > 0.86 ? Math.max(0, 1 - (pT - 0.86) / 0.14) : 1
-  ctx.save()
-  ctx.translate(cx, cy)
-  ctx.rotate(stampAngle)
-  ctx.scale(scale, scale)
-  ctx.globalAlpha = alpha
-  const w = Math.min(W * 0.82, 680)
-  ctx.strokeStyle = rgb(MCHERRY, 0.92)
-  ctx.lineWidth = 4
-  ctx.strokeRect(-w / 2, -70, w, 140)
-  ctx.fillStyle = rgb(MCHERRY, 0.95)
-  ctx.textAlign = 'center'
-  ctx.font = '700 22px ui-monospace, Menlo, monospace'
-  ctx.fillText('CAUSE OF DEATH', 0, -14)
-  ctx.font = `800 ${Math.min(46, w / (cause.length * 0.62))}px ui-monospace, Menlo, monospace`
-  ctx.fillText(cause, 0, 40)
-  ctx.restore()
-  ctx.globalAlpha = 1
 }
 
 let grainTile: HTMLCanvasElement | null = null

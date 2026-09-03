@@ -17,6 +17,7 @@ import {
   CELL,
   COLORS,
   SCHEMES,
+  TIER_COLORS,
   render,
   setCell,
   setPalette,
@@ -27,6 +28,7 @@ import {
   type Pulse,
   type Spark,
 } from './render'
+import { CHAIN_CELEBRATE_TIER, CHAIN_TIERS, chainAshValue } from '../sim'
 import { Hand } from './Hand'
 import { Genome } from './Genome'
 import { CashOut } from './CashOut'
@@ -365,12 +367,19 @@ export function App() {
   const [announce, setAnnounce] = useState('')
   const [shake, setShake] = useState('')
   const shakeTimer = useRef(0)
-  const boom = useCallback(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    setShake('shaking')
-    window.clearTimeout(shakeTimer.current)
-    shakeTimer.current = window.setTimeout(() => setShake(''), 280)
-  }, [])
+  const boom = useCallback(
+    (strength = 1) => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      setShake(strength >= 1.5 ? 'shaking hard' : 'shaking')
+      window.clearTimeout(shakeTimer.current)
+      shakeTimer.current = window.setTimeout(() => setShake(''), strength >= 1.5 ? 420 : 280)
+    },
+    [],
+  )
+  // Bloom/brightness spike shared between the frame loop and the release beat.
+  const punchRef = useRef(0)
+  const [surge, setSurge] = useState('')
+  const surgeTimer = useRef(0)
   const speedRef = useRef(speedIdx)
   const selectedRef = useRef(selected)
   const rotationRef = useRef(rotation)
@@ -379,6 +388,28 @@ export function App() {
   selectedRef.current = selected
   rotationRef.current = rotation
   if (speedIdx > 0) lastSpeedRef.current = speedIdx
+
+  // Punctuate the throttle: releasing time gets a rising sweep + a bloom surge;
+  // holding time gets a soft sub-thunk. The most-repeated action stops being
+  // silent and instant.
+  const prevSpeedBeat = useRef(speedIdx)
+  useEffect(() => {
+    const prev = prevSpeedBeat.current
+    prevSpeedBeat.current = speedIdx
+    if (screen !== 'game') return
+    const rm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prev === 0 && speedIdx > 0) {
+      sfx.play('release')
+      if (!rm) {
+        punchRef.current = Math.max(punchRef.current, 0.55)
+        setSurge('surge')
+        window.clearTimeout(surgeTimer.current)
+        surgeTimer.current = window.setTimeout(() => setSurge(''), 340)
+      }
+    } else if (prev > 0 && speedIdx === 0) {
+      sfx.play('thunk')
+    }
+  }, [speedIdx, screen])
 
   // Portrait pauses the run and resumes on rotate (HANDOFF §8).
   const prePortraitSpeed = useRef<number | null>(null)
@@ -479,13 +510,33 @@ export function App() {
     let lastCrunchAt = 0
     let lastDeaths = 0
     const onBoom = boom
+    // ── hit-stop + The Chain ────────────────────────────────────────────────
+    const hs = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let freezeUntil = 0
+    let prevBanks = duel.bankedCombos.length
+    let banner: {
+      text: string
+      sub: string
+      color: string
+      ttl: number
+      max: number
+    } | null = null
+    let taught = localStorage.getItem('god-taught') === '1'
+    let clockNow = last // shared frame clock, so freeze() can schedule off it
+    const freeze = (ms: number, p: number) => {
+      if (!hs) return
+      freezeUntil = Math.max(freezeUntil, clockNow + ms)
+      punchRef.current = Math.max(punchRef.current, p)
+    }
 
     const frame = (now: number) => {
+      clockNow = now
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const gps = SPEEDS[speedRef.current]
+      const frozen = now < freezeUntil // hit-stop holds the sim on impact frames
       let ticked = false
-      if (duel.status === 'running' && gps > 0) {
+      if (duel.status === 'running' && gps > 0 && !frozen) {
         acc += dt * gps
         let batch = 0
         while (acc >= 1 && batch < 64) {
@@ -520,31 +571,81 @@ export function App() {
               sfx.play('boom')
               lastBoomAt = now
               onBoom()
+              freeze(90, 0.8) // a detonation freezes the frame so the blast reads
             }
           }
         }
-      } else {
+      } else if (gps === 0 || duel.status !== 'running') {
         acc = 0
       }
 
-      // Conversion sparks: any cell that changed hands this generation.
+      // Conversion sparks: any cell that changed hands this generation. During
+      // an active chain they burn brighter and in the tier's color.
       if (ticked) {
         const { cells, prev } = duel.state
         const w = duel.t.width
-        let budget = 80
+        const combo = duel.combo
+        const tierCol = combo.active ? TIER_COLORS[Math.max(0, combo.tier)] : '#fff'
+        const sparkTtl = combo.active ? 13 : 8
+        let budget = 90
         for (let i = 0; i < cells.length && budget > 0; i++) {
           if (cells[i] > 0 && prev[i] > 0 && cells[i] !== prev[i]) {
-            sparksRef.current.push({ x: i % w, y: Math.floor(i / w), ttl: 8, color: '#fff' })
+            sparksRef.current.push({ x: i % w, y: Math.floor(i / w), ttl: sparkTtl, color: tierCol })
             budget--
+            // Teach the faction hook in-situ the first time it happens.
+            if (!taught) {
+              const fx0 = i % w
+              const fy0 = Math.floor(i / w)
+              if (cells[i] === PLAYER && (prev[i] === RIVAL || prev[i] === RADICALS)) {
+                floatsRef.current.push({ x: fx0, y: fy0 - 0.6, text: 'FLANKED — the front is yours', color: COLORS.player, ttl: 95, max: 95 })
+                taught = true
+                localStorage.setItem('god-taught', '1')
+              } else if (cells[i] === RIVAL && prev[i] === PLAYER) {
+                floatsRef.current.push({ x: fx0, y: fy0 - 0.6, text: 'OUTNUMBERED — your cells defect', color: COLORS.rival, ttl: 95, max: 95 })
+                taught = true
+                localStorage.setItem('god-taught', '1')
+              }
+            }
           }
         }
-        // A front collapsing all at once earns a crunch.
+        // A front collapsing all at once earns a crunch + a small hit-stop.
         const rd = duel.state.deaths[RIVAL] + duel.state.deaths[PLAYER]
-        if (rd - lastDeaths >= 14 && now - lastCrunchAt > 220) {
+        const delta = rd - lastDeaths
+        if (delta >= 14 && now - lastCrunchAt > 220) {
           sfx.play('crunch')
           lastCrunchAt = now
+          freeze(Math.min(130, 40 + delta * 2), Math.min(0.6, delta / 45))
         }
         lastDeaths = rd
+      }
+
+      // The Chain: a banked cascade slams a tier callout (MASSACRE+) or floats a
+      // small one, steps the audio arpeggio up, and freezes the frame.
+      if (duel.bankedCombos.length > prevBanks) {
+        for (let k = prevBanks; k < duel.bankedCombos.length; k++) {
+          const bc = duel.bankedCombos[k]
+          const name = CHAIN_TIERS[bc.tier].name
+          const col = TIER_COLORS[bc.tier]
+          sfx.chain(bc.tier)
+          if (bc.tier >= CHAIN_CELEBRATE_TIER) {
+            banner = {
+              text: name,
+              sub: `CHAIN ×${Math.round(bc.total)} · +${chainAshValue(bc.tier)} ash`,
+              color: col,
+              ttl: 80,
+              max: 80,
+            }
+            freeze(70 + bc.tier * 22, 0.95)
+            onBoom(bc.tier >= 3 ? 1.6 : 1)
+          } else {
+            floatsRef.current.push({ x: bc.cx, y: bc.cy - 1, text: `${name} +${chainAshValue(bc.tier)}`, color: col, ttl: 60, max: 60 })
+          }
+        }
+        prevBanks = duel.bankedCombos.length
+      }
+      if (banner) {
+        banner.ttl--
+        if (banner.ttl <= 0) banner = null
       }
 
       // Event edges: the storm's first bite, and the duel's verdict.
@@ -557,6 +658,7 @@ export function App() {
       if (prevStatus === 'running' && duel.status !== 'running') {
         const won = duel.status === 'won'
         sfx.play(won ? 'win' : 'lose')
+        freeze(150, 1) // the climax lands on a held frame
         const runClear = won && round === ROUNDS.length
         const base = ashFor(duel, runClear)
         // A challenge seed pays a one-time bounty the first time it's cleared.
@@ -605,7 +707,13 @@ export function App() {
               : impact.gained.length > 2
                 ? ' (burns out)'
                 : ''
-          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${radicalsTouched} radicals`
+          // Predicted-chain badge: classify the forecast impact into the same
+          // ladder, so you can HUNT the big cascade before you pay.
+          const predTier = rivalHit >= CHAIN_TIERS[0].at
+            ? CHAIN_TIERS.reduce((t, tier, ix) => (rivalHit >= tier.at ? ix : t), -1)
+            : -1
+          const pred = predTier >= 0 ? ` ⚡${CHAIN_TIERS[predTier].name}` : ''
+          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${radicalsTouched} radicals${pred}`
         }
       }
 
@@ -621,6 +729,7 @@ export function App() {
       floatsRef.current = floatsRef.current
         .map((f) => ({ ...f, ttl: f.ttl - 1 }))
         .filter((f) => f.ttl > 0)
+      const cb = duel.combo
       render(ctx, duel, ghost, impact, flashesRef.current, {
         pulses: pulsesRef.current,
         sparks: sparksRef.current,
@@ -630,7 +739,11 @@ export function App() {
         stormFlash: stormFlashRef.current,
         hint: hintText ? { text: hintText, grade: hintGrade } : null,
         reach: selectedRef.current !== null ? duel.radii[PLAYER] : null,
+        punch: punchRef.current,
+        combo: cb.active && cb.total >= 5 ? { total: cb.total, tier: cb.tier, x: cb.cx, y: cb.cy } : null,
+        banner,
       })
+      punchRef.current *= 0.82 // the impact spike decays quickly
 
       if (now - hudAt > 100) {
         hudAt = now
@@ -743,6 +856,9 @@ export function App() {
   const zoomOut = useCallback(() => {
     window.clearTimeout(dwellTimer.current)
     if (zoomedRef.current && canvasRef.current) {
+      // Pull back gently but a touch quicker than the creep-in, so moving feels
+      // responsive without snapping.
+      canvasRef.current.style.transition = 'transform 700ms cubic-bezier(0.33, 0, 0.3, 1)'
       canvasRef.current.style.transform = 'scale(1)'
       zoomedRef.current = false
     }
@@ -760,9 +876,12 @@ export function App() {
         const c = canvasRef.current
         if (!c || duelRef.current?.status !== 'running') return
         c.style.transformOrigin = `${fx.toFixed(1)}% ${fy.toFixed(1)}%`
-        c.style.transform = 'scale(1.22)'
+        // A long, slow ease-in — the microscope creeps into focus rather than
+        // snapping, so a resting cursor drifts gently closer.
+        c.style.transition = 'transform 2600ms cubic-bezier(0.4, 0, 0.2, 1)'
+        c.style.transform = 'scale(1.16)'
         zoomedRef.current = true
-      }, 430)
+      }, 550)
     },
     [reducedMotion],
   )
@@ -1036,7 +1155,7 @@ export function App() {
   // ── float mount ──────────────────────────────────────────────────────────
   if (layout.mount === 'float') {
     return (
-      <div className={`stage mount-float ${shake} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
+      <div className={`stage mount-float ${shake} ${surge} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
         <div className="board-slot">
         <div className="board-frame" ref={boardBoxRef} style={{ width: layout.cssW, height: layout.cssH }}>
         {canvasEl}
@@ -1289,7 +1408,7 @@ export function App() {
     <div className={`stage mount-${layout.mount}`}>
       <div className="board-col">
         {!narrow && labelStrip}
-        <div className={`board-wrap ${shake}`} ref={boardBoxRef}>
+        <div className={`board-wrap ${shake} ${surge}`} ref={boardBoxRef}>
           {canvasEl}
           {coachStep > 0 && !over && (
             <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">

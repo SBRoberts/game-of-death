@@ -182,7 +182,16 @@ export interface FxState {
   hint: { text: string; grade: 'poor' | 'fair' | 'good' | 'great' | null } | null
   /** Placement reach radius while a card is armed — draws the reach ring. */
   reach: number | null
+  /** Bloom/brightness spike this frame (0..1), paired with hit-stop. */
+  punch: number
+  /** Live chain counter climbing over the cascade centroid. */
+  combo: { total: number; tier: number; x: number; y: number } | null
+  /** A banked-chain callout slamming in over the board. */
+  banner: { text: string; sub: string; color: string; ttl: number; max: number } | null
 }
+
+/** The five chain tiers' display colors (index = tier). */
+export const TIER_COLORS = ['#9db2d0', '#8affc4', '#42f59b', '#e8c463', '#ff5340'] as const
 
 // ── the reach ring (HANDOFF §4.2) ──────────────────────────────────────────
 // The legal placement region, drawn as a boundary on the slide. Chebyshev
@@ -331,7 +340,7 @@ let grain: CanvasPattern | null = null
 let vignette: CanvasGradient | null = null
 let vignetteKey = ''
 
-function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, h: number): void {
+function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, h: number, punch: number): void {
   if (!bloomCanvas || bloomCanvas.width !== w || bloomCanvas.height !== h) {
     bloomCanvas = document.createElement('canvas')
     bloomCanvas.width = w
@@ -357,10 +366,11 @@ function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, 
   bctx.putImageData(bloomImage, 0, 0)
   ctx.save()
   ctx.imageSmoothingEnabled = true
-  // Two upscale passes: a wide dim halo and a tighter hot one.
-  ctx.globalAlpha = 0.22
+  // Two upscale passes: a wide dim halo and a tighter hot one. A hit-stop
+  // punch lifts both so an impact frame flares brighter.
+  ctx.globalAlpha = 0.22 + 0.28 * punch
   ctx.drawImage(bloomCanvas, -CELL, -CELL, (w + 2) * CELL, (h + 2) * CELL)
-  ctx.globalAlpha = 0.4
+  ctx.globalAlpha = 0.4 + 0.4 * punch
   ctx.drawImage(bloomCanvas, 0, 0, w * CELL, h * CELL)
   ctx.restore()
 }
@@ -598,7 +608,7 @@ export function render(
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, W, H)
 
-  drawBloom(ctx, s.cells, w, h)
+  drawBloom(ctx, s.cells, w, h, fx.punch)
 
   // Photobleached remnants: alive last generation, dead now.
   for (let i = 0; i < s.cells.length; i++) {
@@ -855,6 +865,46 @@ export function render(
     ctx.font = 'bold 11px ui-monospace, Menlo, monospace'
     ctx.textAlign = 'center'
     ctx.fillText(f.text, f.x * CELL, f.y * CELL - t * 14)
+    ctx.globalAlpha = 1
+  }
+
+  // The live chain counter: a climbing number over the cascade, growing and
+  // warming toward its tier color as it escalates.
+  if (fx.combo) {
+    const c = fx.combo
+    const color = TIER_COLORS[Math.max(0, c.tier)]
+    const grow = 1 + Math.min(0.9, c.total / 120)
+    const size = Math.round((15 + Math.min(20, c.total / 4)) * grow)
+    const cx = c.x * CELL
+    const cy = c.y * CELL - 10
+    ctx.font = `bold ${size}px ui-monospace, Menlo, monospace`
+    ctx.textAlign = 'center'
+    ctx.shadowColor = color
+    ctx.shadowBlur = 12
+    ctx.fillStyle = color
+    ctx.fillText(`CHAIN ${Math.round(c.total)}`, cx, cy)
+    ctx.shadowBlur = 0
+  }
+
+  // A banked chain slams a tier callout over the board and fades.
+  if (fx.banner) {
+    const b = fx.banner
+    const t = 1 - b.ttl / b.max
+    const ease = 1 - Math.pow(1 - Math.min(1, t * 3), 3) // slam in over first third
+    ctx.globalAlpha = Math.min(1, (b.ttl / (b.max * 0.35)) * 1)
+    ctx.textAlign = 'center'
+    ctx.shadowColor = b.color
+    ctx.shadowBlur = 24
+    ctx.fillStyle = b.color
+    const sz = Math.round(34 * (0.7 + 0.3 * ease))
+    ctx.font = `bold ${sz}px ui-monospace, Menlo, monospace`
+    const cx = W / 2
+    const cy = H * 0.32
+    ctx.fillText(b.text, cx, cy)
+    ctx.shadowBlur = 0
+    ctx.font = '13px ui-monospace, Menlo, monospace'
+    ctx.fillStyle = '#dbe5f4'
+    ctx.fillText(b.sub, cx, cy + 26)
     ctx.globalAlpha = 1
   }
 }

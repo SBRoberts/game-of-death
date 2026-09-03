@@ -78,6 +78,9 @@ export type SfxName =
   | 'storm'
   | 'win'
   | 'lose'
+  | 'release'
+  | 'thunk'
+  | 'newbest'
 
 export const sfx = {
   get muted(): boolean {
@@ -153,6 +156,49 @@ export const sfx = {
         tone(ac, 'triangle', 220, 148, 0.42, 0.18)
         tone(ac, 'sine', 110, 72, 0.6, 0.14, 0.12)
         break
+      case 'release': {
+        // Time resumes: a lowpass sweep opening up, a soft rising body.
+        const t = ac.currentTime
+        const n = Math.floor(ac.sampleRate * 0.25)
+        const buf = ac.createBuffer(1, n, ac.sampleRate)
+        const data = buf.getChannelData(0)
+        for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n)
+        const src = ac.createBufferSource()
+        src.buffer = buf
+        const filt = ac.createBiquadFilter()
+        filt.type = 'lowpass'
+        filt.frequency.setValueAtTime(500, t)
+        filt.frequency.exponentialRampToValueAtTime(16000, t + 0.22)
+        const g = ac.createGain()
+        g.gain.setValueAtTime(0.12, t)
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25)
+        src.connect(filt).connect(g).connect(ac.destination)
+        src.start(t)
+        tone(ac, 'sine', 180, 300, 0.18, 0.08)
+        break
+      }
+      case 'thunk': // time holds: a short sub drop
+        tone(ac, 'sine', 150, 60, 0.14, 0.16)
+        break
+      case 'newbest': // a rising three-note flourish
+        tone(ac, 'triangle', 659, 659, 0.09, 0.14)
+        tone(ac, 'triangle', 880, 880, 0.09, 0.15, 0.09)
+        tone(ac, 'triangle', 1175, 1175, 0.22, 0.16, 0.18)
+        break
     }
+  },
+  /** A banked chain: a pentatonic note stepping up per tier, plus a sub-boom. */
+  chain(tier: number): void {
+    if (mutedFlag) return
+    const ac = ensureCtx()
+    if (!ac) return
+    const notes = [523.25, 659.25, 783.99, 987.77, 1318.51] // C E G B E'
+    const f = notes[Math.max(0, Math.min(4, tier))]
+    tone(ac, 'triangle', f, f, 0.16, 0.16)
+    tone(ac, 'sine', f * 1.5, f * 1.5, 0.12, 0.06, 0.02)
+    // Sub-boom scales with tier.
+    const sub = 90 - tier * 8
+    tone(ac, 'sine', sub, sub * 0.4, 0.28 + tier * 0.05, 0.22 + tier * 0.05)
+    if (tier >= 3) noise(ac, 0.3, 0.16, 600)
   },
 }

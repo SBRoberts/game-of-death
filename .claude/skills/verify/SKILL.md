@@ -65,6 +65,14 @@ mouse with `{ steps: N }` so hovers read naturally on video. SFX are WebAudio
 and inaudible headless; verify audio wiring by checking zero console errors on
 select/place/invalid/storm/win paths.
 
+## Title screen
+
+The app opens on a **title screen** (`.title-screen`) that spells "THE GAME OF
+DEATH" in live cells, with `START` and `HOW TO PLAY` buttons. Drive scripts
+must click `.title-btn.primary` (START) to reach the game, which lands
+**paused** (throttle at ⏸) so the first action is planning. `.howto` is the
+rules modal.
+
 ## Debug hooks
 
 Load with `&debug=1` to enable force-end keys: `v` wins the current duel,

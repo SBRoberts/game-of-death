@@ -31,6 +31,8 @@ import { Hand } from './Hand'
 import { Genome } from './Genome'
 import { CashOut } from './CashOut'
 import { Settings } from './Settings'
+import { TitleScreen } from './TitleScreen'
+import { HowTo } from './HowTo'
 import { sfx, type SfxName } from './audio'
 import {
   ashBreakdown,
@@ -307,6 +309,9 @@ export function App() {
   const [showGenome, setShowGenome] = useState(false)
   const [ashEarned, setAshEarned] = useState<number | null>(null)
   const [challengeBounty, setChallengeBounty] = useState(0)
+  // The title screen shows first; START drops into a fresh run.
+  const [screen, setScreen] = useState<'title' | 'game'>('title')
+  const [showHowTo, setShowHowTo] = useState(false)
   const metaRef = useRef(meta)
   metaRef.current = meta
   const duelRef = useRef<Duel | null>(null)
@@ -453,7 +458,7 @@ export function App() {
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || layout.mount === 'portrait') return
+    if (!canvas || layout.mount === 'portrait' || screen !== 'game') return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     setCell(layout.cell)
@@ -677,7 +682,7 @@ export function App() {
 
     raf = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(raf)
-  }, [duel, round, boom, layout.mount, layout.cell])
+  }, [duel, round, boom, layout.mount, layout.cell, screen])
 
   // Pointer input on the board.
   const cellFromPoint = (clientX: number, clientY: number) => {
@@ -887,6 +892,24 @@ export function App() {
       )}
     </div>
   )
+
+  // ── title screen ─────────────────────────────────────────────────────────
+  if (screen === 'title') {
+    const startGame = () => {
+      setShowHowTo(false)
+      setScreen('game')
+      setSpeedIdx(0) // land paused so the first thing you do is plan
+    }
+    return (
+      <div className="stage title-stage">
+        <TitleScreen onStart={startGame} onHowTo={() => setShowHowTo(true)} />
+        {showHowTo && <HowTo onClose={() => setShowHowTo(false)} onStart={startGame} />}
+        <div className="sr-only" role="status" aria-live="polite">
+          Title screen. Press Start to begin, or How to Play for the rules.
+        </div>
+      </div>
+    )
+  }
 
   // ── portrait ─────────────────────────────────────────────────────────────
   if (layout.mount === 'portrait') {

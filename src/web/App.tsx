@@ -19,7 +19,6 @@ import {
   SCHEMES,
   TIER_COLORS,
   render,
-  renderFrame,
   setCell,
   setPalette,
   type Flash,
@@ -348,7 +347,6 @@ export function App() {
   const [hud, setHud] = useState<Hud | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const overlayRef = useRef<HTMLCanvasElement>(null) // fixed eyepiece frame layer
   const hoverRef = useRef<{ x: number; y: number } | null>(null)
   const flashesRef = useRef<Flash[]>([])
   const pulsesRef = useRef<Pulse[]>([])
@@ -529,14 +527,6 @@ export function App() {
     canvas.width = duel.t.width * CELL * dpr
     canvas.height = duel.t.height * CELL * dpr
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    // The fixed eyepiece frame renders on its own overlay canvas (never zoomed).
-    const overlay = overlayRef.current
-    const octx = overlay?.getContext('2d') ?? null
-    if (overlay && octx) {
-      overlay.width = duel.t.width * CELL * dpr
-      overlay.height = duel.t.height * CELL * dpr
-      octx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    }
 
     let raf = 0
     let last = performance.now()
@@ -793,7 +783,6 @@ export function App() {
         combo: cb.active && cb.total >= 5 ? { total: cb.total, tier: cb.tier, x: cb.cx, y: cb.cy } : null,
         banner,
       })
-      if (octx) renderFrame(octx, duel, now) // fixed eyepiece frame, unzoomed
       punchRef.current *= 0.82 // the impact spike decays quickly
 
       if (now - hudAt > 100) {
@@ -894,70 +883,8 @@ export function App() {
     }
   }, [coached, placedOnce, speedIdx])
 
-  // ── dwell-zoom: a microscope loupe that focuses when the cursor holds still
-  // over a spot you're aiming at, and pulls back only on a deliberate move.
-  // The 2D→cell mapping is scale-invariant (the bounding rect already reflects
-  // the CSS transform), so placing while magnified still lands on the right cell.
-  const DWELL_MS = 850 // hold this long before the loupe begins to focus
-  const MOVE_THRESH = 10 // px of travel that counts as "moved" vs. aiming jitter
-  const boardBoxRef = useRef<HTMLDivElement>(null)
-  const dwellTimer = useRef(0)
-  const zoomedRef = useRef(false)
-  const anchorRef = useRef<{ x: number; y: number } | null>(null) // last real move
-  const reducedMotion = useMemo(
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    [],
-  )
-  const zoomOut = useCallback(() => {
-    window.clearTimeout(dwellTimer.current)
-    if (zoomedRef.current && canvasRef.current) {
-      // Pull back gently but a touch quicker than the creep-in, so moving feels
-      // responsive without snapping.
-      canvasRef.current.style.transition = 'transform 700ms cubic-bezier(0.33, 0, 0.3, 1)'
-      canvasRef.current.style.transform = 'scale(1)'
-      zoomedRef.current = false
-    }
-  }, [])
-  const scheduleDwell = useCallback(
-    (clientX: number, clientY: number) => {
-      // The loupe is a fine-pointer affordance: never engage it on touch.
-      if (reducedMotion || coarse || selectedRef.current === null) return
-      const box = boardBoxRef.current
-      if (!box) return
-      const r = box.getBoundingClientRect()
-      const fx = ((clientX - r.left) / r.width) * 100
-      const fy = ((clientY - r.top) / r.height) * 100
-      window.clearTimeout(dwellTimer.current)
-      dwellTimer.current = window.setTimeout(() => {
-        const c = canvasRef.current
-        if (!c || duelRef.current?.status !== 'running' || selectedRef.current === null) return
-        c.style.transformOrigin = `${fx.toFixed(1)}% ${fy.toFixed(1)}%`
-        // A long, strong ease-in (quart): the microscope is imperceptible at
-        // first and builds, so a resting cursor drifts gently into focus.
-        c.style.transition = 'transform 4200ms cubic-bezier(0.895, 0.03, 0.685, 0.22)'
-        c.style.transform = 'scale(1.16)'
-        zoomedRef.current = true
-      }, DWELL_MS)
-    },
-    [reducedMotion, coarse],
-  )
-
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { clientX, clientY } = e
-    hoverRef.current = cellFromPoint(clientX, clientY)
-    // The loupe only engages while you're aiming a card.
-    if (selectedRef.current === null) {
-      zoomOut()
-      anchorRef.current = null
-      return
-    }
-    // Ignore sub-threshold jitter: small aim corrections must not reset the
-    // loupe (that constant zoom-out on every pixel is what felt janky).
-    const a = anchorRef.current
-    if (a && Math.hypot(clientX - a.x, clientY - a.y) < MOVE_THRESH) return
-    anchorRef.current = { x: clientX, y: clientY }
-    zoomOut()
-    scheduleDwell(clientX, clientY)
+    hoverRef.current = cellFromPoint(e.clientX, e.clientY)
   }
 
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -965,32 +892,6 @@ export function App() {
     const { x, y } = cellFromPoint(e.clientX, e.clientY)
     placeAt(x, y)
   }
-
-  // Deselecting (Escape, or a placement that consumes the card) pulls the loupe
-  // back even if the cursor never moves. Drop the jitter anchor too, so the next
-  // aim re-arms the loupe instead of being swallowed as sub-threshold drift.
-  useEffect(() => {
-    if (selected === null) {
-      zoomOut()
-      anchorRef.current = null
-    }
-  }, [selected, zoomOut])
-
-  // A layout change (resize across a breakpoint, or a mount switch) rebuilds the
-  // canvas; snap any live zoom back and drop the pending dwell so the board can't
-  // stay magnified against a freshly-sized, unscaled eyepiece frame. The cleanup
-  // also kills the timer on unmount so it can't fire against a stale canvas.
-  useEffect(() => {
-    window.clearTimeout(dwellTimer.current)
-    zoomedRef.current = false
-    anchorRef.current = null
-    const c = canvasRef.current
-    if (c) {
-      c.style.transition = ''
-      c.style.transform = 'scale(1)'
-    }
-    return () => window.clearTimeout(dwellTimer.current)
-  }, [layout.mount, layout.cell])
 
   // Touch: drag to aim with the ghost 40px above the fingertip; lift commits
   // inside the reach, cancels outside (HANDOFF §6).
@@ -1079,8 +980,6 @@ export function App() {
       onMouseMove={onMove}
       onMouseLeave={() => {
         if (!touchDragRef.current) hoverRef.current = null
-        zoomOut()
-        anchorRef.current = null // re-entering the board should re-arm the loupe
       }}
       onClick={onClick}
       onContextMenu={onContextMenu}
@@ -1088,24 +987,6 @@ export function App() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     />
-  )
-
-  // The board canvas (which the loupe zooms) and the fixed eyepiece overlay,
-  // stacked in a box sized exactly to the board so the two align in every mount.
-  const boardStack = (
-    <div
-      className="board-stack"
-      ref={boardBoxRef}
-      style={{ width: layout.cssW, height: layout.cssH }}
-    >
-      {canvasEl}
-      <canvas
-        ref={overlayRef}
-        className="board-overlay"
-        aria-hidden="true"
-        style={{ width: layout.cssW, height: layout.cssH }}
-      />
-    </div>
   )
 
   const verdictText = over
@@ -1275,7 +1156,7 @@ export function App() {
       <div className={`stage mount-float ${shake} ${surge} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
         <div className="board-slot">
         <div className="board-frame" style={{ width: layout.cssW, height: layout.cssH }}>
-        {boardStack}
+        {canvasEl}
 
         <div className="island isl-tl">
           <div className="frost" aria-hidden="true" />
@@ -1530,7 +1411,7 @@ export function App() {
       <div className="board-col">
         {!narrow && labelStrip}
         <div className={`board-wrap ${shake} ${surge}`}>
-          {boardStack}
+          {canvasEl}
           {coachStep > 0 && !over && (
             <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">
               The ghost double-simulates {TUNING.foresightGens} generations and grades the spot

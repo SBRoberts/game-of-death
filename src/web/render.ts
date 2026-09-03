@@ -592,26 +592,6 @@ function drawMomentumFrame(
   drawFactionArc(ctx, RC, rh, COLORS.rival, heatRival)
 }
 
-/**
- * The fixed eyepiece layer, drawn on a separate overlay canvas that the
- * dwell-zoom never transforms: the territory-gauge frame and the graticule.
- * Keeping it off the zooming board canvas means the loupe magnifies the
- * specimen beneath a stationary reticle — the frame stays crisp and in place.
- */
-export function renderFrame(
-  octx: CanvasRenderingContext2D,
-  duel: Duel,
-  now: number,
-): void {
-  const s = duel.state
-  const { width: w, height: h } = s.cfg
-  const W = w * CELL
-  const H = h * CELL
-  octx.clearRect(0, 0, W, H)
-  drawMomentumFrame(octx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL], now, duel.status)
-  graticule(octx, w, h)
-}
-
 export function render(
   ctx: CanvasRenderingContext2D,
   duel: Duel,
@@ -833,9 +813,11 @@ export function render(
     drawReachRing(ctx, s, fx.reach)
   }
 
-  // The momentum frame + graticule are NOT drawn here — they live on a fixed
-  // overlay canvas (renderFrame) so the dwell-zoom loupe magnifies the specimen
-  // beneath a stationary eyepiece reticle, rather than scaling the frame too.
+  // The frame gauge draws over the glass so it always reads.
+  drawMomentumFrame(ctx, W, H, s.pops[PLAYER], s.pops[RADICALS], s.pops[RIVAL], fx.now, duel.status)
+
+  // The eyepiece graticule, ticked just inside the frame.
+  graticule(ctx, w, h)
 
   // Cursor-side placement evaluation: the verdict lives where you're aiming.
   // Sized for reading, not squinting: 14px type, generous padding, an opaque

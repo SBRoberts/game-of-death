@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "harness": "tsx src/harness/selfplay.ts",
-    "balance": "tsx src/harness/genebalance.ts"
+    "balance": "tsx src/harness/genebalance.ts",
+    "draftbalance": "tsx src/harness/draftbalance.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

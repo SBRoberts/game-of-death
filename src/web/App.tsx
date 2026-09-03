@@ -920,7 +920,8 @@ export function App() {
   }, [])
   const scheduleDwell = useCallback(
     (clientX: number, clientY: number) => {
-      if (reducedMotion || selectedRef.current === null) return
+      // The loupe is a fine-pointer affordance: never engage it on touch.
+      if (reducedMotion || coarse || selectedRef.current === null) return
       const box = boardBoxRef.current
       if (!box) return
       const r = box.getBoundingClientRect()
@@ -938,11 +939,10 @@ export function App() {
         zoomedRef.current = true
       }, DWELL_MS)
     },
-    [reducedMotion],
+    [reducedMotion, coarse],
   )
 
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.nativeEvent instanceof PointerEvent && (e.nativeEvent as PointerEvent).pointerType !== 'mouse') return
     const { clientX, clientY } = e
     hoverRef.current = cellFromPoint(clientX, clientY)
     // The loupe only engages while you're aiming a card.
@@ -967,10 +967,30 @@ export function App() {
   }
 
   // Deselecting (Escape, or a placement that consumes the card) pulls the loupe
-  // back even if the cursor never moves.
+  // back even if the cursor never moves. Drop the jitter anchor too, so the next
+  // aim re-arms the loupe instead of being swallowed as sub-threshold drift.
   useEffect(() => {
-    if (selected === null) zoomOut()
+    if (selected === null) {
+      zoomOut()
+      anchorRef.current = null
+    }
   }, [selected, zoomOut])
+
+  // A layout change (resize across a breakpoint, or a mount switch) rebuilds the
+  // canvas; snap any live zoom back and drop the pending dwell so the board can't
+  // stay magnified against a freshly-sized, unscaled eyepiece frame. The cleanup
+  // also kills the timer on unmount so it can't fire against a stale canvas.
+  useEffect(() => {
+    window.clearTimeout(dwellTimer.current)
+    zoomedRef.current = false
+    anchorRef.current = null
+    const c = canvasRef.current
+    if (c) {
+      c.style.transition = ''
+      c.style.transform = 'scale(1)'
+    }
+    return () => window.clearTimeout(dwellTimer.current)
+  }, [layout.mount, layout.cell])
 
   // Touch: drag to aim with the ghost 40px above the fingertip; lift commits
   // inside the reach, cancels outside (HANDOFF §6).
@@ -1060,6 +1080,7 @@ export function App() {
       onMouseLeave={() => {
         if (!touchDragRef.current) hoverRef.current = null
         zoomOut()
+        anchorRef.current = null // re-entering the board should re-arm the loupe
       }}
       onClick={onClick}
       onContextMenu={onContextMenu}

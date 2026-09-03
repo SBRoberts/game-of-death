@@ -51,7 +51,7 @@ export const TUNING = {
   // shop/chest currency) and fills the chest meter. Both are ledgers of matter
   // already on the board — never minted, never converted back to biomass.
   plasmPerRadical: 1, // PLASM banked per converted radical cell
-  chestEvery: 10, // converted radical cells per in-run chest
+  chestEvery: 7, // converted radical cells per in-run chest (tuned in P6)
 
   // Throttle stops, generations per second (index 0 = paused). 1× is slow
   // enough to think at; the top stop is for riding out settled positions.

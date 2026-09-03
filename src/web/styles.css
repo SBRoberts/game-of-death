@@ -157,6 +157,23 @@ canvas {
   border-radius: 0;
 }
 
+/* Board stack: the zooming board canvas and the fixed eyepiece overlay,
+   overlaid at identical size so the frame never drifts from the cells. */
+.board-stack {
+  position: relative;
+  line-height: 0;
+  flex: none;
+}
+
+/* The eyepiece overlay sits exactly over the board and never zooms; it only
+   draws the frame gauge + graticule, so events pass straight through. */
+.board-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: auto;
+}
+
 /* Clip the magnified board to its own box so the loupe never spills over chrome. */
 .mount-float .board-frame,
 .board-wrap {

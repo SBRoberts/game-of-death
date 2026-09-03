@@ -37,8 +37,6 @@ const CAUSES = ['OVERPOPULATION', 'ISOLATION', 'ENTROPY', 'EXSANGUINATION', 'OSC
 
 const rgb = (c: readonly number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-const mix = (a: readonly number[], b: readonly number[], t: number) =>
-  [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)] as const
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
@@ -109,6 +107,7 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
     let sprites: Record<string, HTMLCanvasElement> = {}
     let cellBuf: HTMLCanvasElement | null = null
     let bctx: CanvasRenderingContext2D | null = null
+    let marqueePts: [number, number][] = [] // perimeter chase-light positions, cached
 
     const layoutLine = (text: string, ox: number, oy: number, s: number) => {
       let cx = ox
@@ -187,6 +186,15 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       cellBuf.height = canvas.height
       bctx = cellBuf.getContext('2d')
       if (bctx) bctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+      // Pre-compute the marquee chase-light ring (geometry depends only on size).
+      const bm = 16
+      const bstep = Math.max(22, cell * 2)
+      marqueePts = []
+      for (let x = bm; x < W - bm; x += bstep) marqueePts.push([x, bm])
+      for (let y = bm; y < H - bm; y += bstep) marqueePts.push([W - bm, y])
+      for (let x = W - bm; x > bm; x -= bstep) marqueePts.push([x, H - bm])
+      for (let y = H - bm; y > bm; y -= bstep) marqueePts.push([bm, y])
 
       seedLife()
     }
@@ -377,6 +385,9 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
         }
         if (phase === 'rebirth') cur.fill(0)
         if (phase === 'salvo') {
+          // the title is fully reborn now — heal the glyph substrate so it reads
+          // solid from frame one (rebirth left cur all-zero)
+          for (const c of glyphs) cur[c.y * gw + c.x] = 1
           // fire a salvo of light from every glyph, radiating outward
           parts.length = 0
           const cx = (colMin + colMax) / 2
@@ -456,8 +467,9 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
               const pop = Math.max(0, 1 - (revealX - x) / 4)
               a = 0.5 + 0.5 * pop
             } else if (v) {
-              // drifting seed reagents during regeneration
-              sprite = rng() < 0.5 ? sprites.radical : sprites.rival
+              // drifting seed reagents during regeneration — stable per-cell tint
+              // (a hash, not rng(), so it doesn't flicker or touch the sim stream)
+              sprite = (x + y) & 1 ? sprites.radical : sprites.rival
               a = 0.5
             }
           }
@@ -480,7 +492,9 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
         ctx.globalAlpha = 0.5
         ctx.drawImage(cellBuf, -6, -4, W + 12, H + 8)
         ctx.globalAlpha = 1
-        if (split > 1.2) {
+        // The RGB fringe is an entrance effect — collapse it fully once focused
+        // (gating on focus, not an absolute px, so wide displays don't keep it).
+        if (focus < 0.99) {
           ctx.globalAlpha = 0.5
           ctx.drawImage(cellBuf, split, 0, W, H)
           ctx.drawImage(cellBuf, -split, 0, W, H)
@@ -513,7 +527,7 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       if (pointerX >= 0 && sprites.white) {
         ctx.globalCompositeOperation = 'lighter'
         const s2 = cell * 3.4
-        ctx.globalAlpha = 0.5 + 0.2 * Math.sin(now / 140)
+        ctx.globalAlpha = reduced ? 0.55 : 0.5 + 0.2 * Math.sin(now / 140)
         ctx.drawImage(sprites.white, pointerX - s2 / 2, pointerY - s2 / 2, s2, s2)
         ctx.globalAlpha = 1
         ctx.globalCompositeOperation = 'source-over'
@@ -521,7 +535,7 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
 
       // ── eyepiece chrome ────────────────────────────────────────────────────
       drawReticle(ctx, W, H, now, focus, reduced)
-      drawMarquee(ctx, W, H, now, cell, reduced)
+      drawMarquee(ctx, marqueePts, now, reduced)
       if (phase === 'death') drawStamp(ctx, W, H, pT, curCause)
       drawGrain(ctx, W, H, now, reduced)
       drawVignette(ctx, W, H)
@@ -531,13 +545,20 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
 
     build()
     raf = requestAnimationFrame(frame)
-    const onResize = () => build()
+    // Debounce the (expensive) rebuild so a resize drag doesn't re-bake sprites
+    // and reseed the colony dozens of times per second — rebuild once it settles.
+    let resizeTimer = 0
+    const onResize = () => {
+      window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(build, 160)
+    }
     window.addEventListener('resize', onResize)
     canvas.addEventListener('pointermove', onPointer)
     canvas.addEventListener('pointerdown', onDown)
     canvas.addEventListener('pointerleave', onLeave)
     return () => {
       cancelAnimationFrame(raf)
+      window.clearTimeout(resizeTimer)
       window.removeEventListener('resize', onResize)
       canvas.removeEventListener('pointermove', onPointer)
       canvas.removeEventListener('pointerdown', onDown)
@@ -645,29 +666,19 @@ function drawReticle(
 
 function drawMarquee(
   ctx: CanvasRenderingContext2D,
-  W: number,
-  H: number,
+  pts: [number, number][],
   now: number,
-  cell: number,
   reduced: boolean,
 ) {
-  const m = 16
-  const step = Math.max(22, cell * 2)
-  const pts: [number, number][] = []
-  for (let x = m; x < W - m; x += step) pts.push([x, m])
-  for (let y = m; y < H - m; y += step) pts.push([W - m, y])
-  for (let x = W - m; x > m; x -= step) pts.push([x, H - m])
-  for (let y = H - m; y > m; y -= step) pts.push([m, y])
   const phase = reduced ? 0 : now / 420
   ctx.globalCompositeOperation = 'lighter'
-  pts.forEach(([x, y], i) => {
+  for (let i = 0; i < pts.length; i++) {
     const b = reduced ? 0.16 : 0.12 + 0.5 * Math.max(0, Math.sin(phase - i * 0.5))
-    const col = i % 9 === 0 ? MCHERRY : GFP
-    ctx.fillStyle = rgb(col, b)
+    ctx.fillStyle = rgb(i % 9 === 0 ? MCHERRY : GFP, b)
     ctx.beginPath()
-    ctx.arc(x, y, 1.6 + b * 1.6, 0, Math.PI * 2)
+    ctx.arc(pts[i][0], pts[i][1], 1.6 + b * 1.6, 0, Math.PI * 2)
     ctx.fill()
-  })
+  }
   ctx.globalCompositeOperation = 'source-over'
 }
 

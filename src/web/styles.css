@@ -2074,7 +2074,7 @@ canvas {
   color: #052012;
 }
 .title-btn.primary .btn-sub {
-  color: rgba(5, 32, 18, 0.62);
+  color: rgba(5, 32, 18, 0.82); /* AA-legible on the green fill */
 }
 .title-btn.primary::after {
   /* a slow sheen sweeping across the slab */
@@ -2116,7 +2116,7 @@ canvas {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 10.5px;
   letter-spacing: 0.14em;
-  color: rgba(127, 150, 255, 0.4);
+  color: #7d8bb8; /* opaque blue-grey — clears AA on the dark field */
   text-align: center;
 }
 

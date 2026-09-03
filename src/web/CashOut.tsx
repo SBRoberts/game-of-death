@@ -124,7 +124,11 @@ export function CashOut({
           ) : (
             <span className="carrot-next">everything within reach — go bigger</span>
           )}
-          <button className="seed-share" onClick={copySeed} aria-label="copy this run's seed link">
+          <button
+            className="seed-share"
+            onClick={copySeed}
+            aria-label={copied ? 'seed link copied to clipboard' : "copy this run's seed link"}
+          >
             {copied ? 'COPIED ✓' : `SEED ${seed} ⧉`}
           </button>
         </div>

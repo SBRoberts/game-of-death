@@ -496,18 +496,23 @@ export function App() {
     [duel, coarse],
   )
 
-  // Reroll: spend biomass to dig for a better hand. Deselecting after a swap
-  // forces an immediate re-render (the HUD tick would otherwise lag ~100ms).
+  // Reroll: spend biomass to dig for a better hand. A version bump forces an
+  // immediate re-render (the ~100ms HUD tick would otherwise lag the new hand);
+  // bumping unconditionally covers the whole-hand case where nothing was
+  // selected, so setSelected(null) alone wouldn't have scheduled a render.
+  const [, bumpHand] = useState(0)
   const rerollCard = useCallback((i: number) => {
     if (duelRef.current?.rerollCard(i)) {
       sfx.play('place_grow')
       setSelected(null)
+      bumpHand((n) => n + 1)
     } else sfx.play('invalid')
   }, [])
   const rerollHand = useCallback(() => {
     if (duelRef.current?.rerollHand()) {
       sfx.play('release')
       setSelected(null)
+      bumpHand((n) => n + 1)
     } else sfx.play('invalid')
   }, [])
 
@@ -696,6 +701,8 @@ export function App() {
         setChallengeBounty(bounty)
         setAshEarned(base + bounty)
         const peak = Math.round(duel.summary.peakChain)
+        // Records read from the pre-update meta, matching what recordRun will do.
+        const newBest = peak > metaRef.current.best
         setMeta((m) => {
           const earned = earnAsh(m, base)
           const paid = challengeHit ? claimChallenge(earned, duel.colonySeed).meta : earned
@@ -703,10 +710,12 @@ export function App() {
           setRunRecord({ peak, newBest: rec.newBest, newFrontier: rec.newFrontier })
           return rec.meta
         })
+        // Speak any record so it reaches assistive tech, not just the visual badge.
+        const records = `${newBest ? ` New best cascade: ${peak}.` : ''}${frontier ? ' New frontier reached — deepest round yet.' : ''}`
         setAnnounce(
           won
-            ? `${runClear ? 'Run complete — the universe yields.' : `Round ${round} cleared.`} ${base + bounty} ash earned.${challengeHit ? ` Challenge complete: the ${cseed.name} paid a ${bounty} ash bounty.` : ''}`
-            : `Your colony is dead. Reached round ${round}. ${base} ash earned.`,
+            ? `${runClear ? 'Run complete — the universe yields.' : `Round ${round} cleared.`} ${base + bounty} ash earned.${challengeHit ? ` Challenge complete: the ${cseed.name} paid a ${bounty} ash bounty.` : ''}${records}`
+            : `Your colony is dead. Reached round ${round}. ${base} ash earned.${records}`,
         )
       }
       prevStatus = duel.status
@@ -739,13 +748,12 @@ export function App() {
               : impact.gained.length > 2
                 ? ' (burns out)'
                 : ''
-          // Predicted-chain badge: classify the forecast impact into the same
-          // ladder, so you can HUNT the big cascade before you pay.
-          const predTier = rivalHit >= CHAIN_TIERS[0].at
-            ? CHAIN_TIERS.reduce((t, tier, ix) => (rivalHit >= tier.at ? ix : t), -1)
-            : -1
-          const pred = predTier >= 0 ? ` ⚡${CHAIN_TIERS[predTier].name}` : ''
-          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${radicalsTouched} radicals${pred}`
+          // No predicted-chain tier here: the forecast is an end-of-horizon
+          // snapshot, but chains score cumulative net losses over the arm
+          // window — classifying one with the other's ladder would promise a
+          // tier that can't be honored. The honest "−N rival" stands on its own;
+          // the chain is the emergent payoff you discover as it banks.
+          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${radicalsTouched} radicals`
         }
       }
 

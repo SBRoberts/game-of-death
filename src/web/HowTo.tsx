@@ -195,7 +195,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           </div>
           <div className="rule">
             <DuelDiagram
-              neighbors={[[0, -1, 'you'], [-1, 0, 'you'], [1, 0, 'foe']]}
+              neighbors={[[0, -1, 'you'], [-1, 0, 'you'], [1, 0, 'you']]}
               before="foe"
               after="you"
             />
@@ -206,13 +206,13 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           </div>
           <div className="rule">
             <DuelDiagram
-              neighbors={[[0, -1, 'you'], [1, 0, 'foe']]}
+              neighbors={[[0, -1, 'you'], [1, 0, 'you'], [-1, 0, 'foe']]}
               before="foe"
               after={null}
             />
             <div className="rule-text">
               <b>Casualties</b>
-              <span>merely outnumbered, with no clear victor, a contested enemy dies instead — a chain of these is a rout</span>
+              <span>outnumbered by just one, with an ally still beside it, a contested enemy dies instead — a chain of these is a rout</span>
             </div>
           </div>
         </div>

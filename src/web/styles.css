@@ -1426,15 +1426,16 @@ canvas {
   color: var(--gold);
 }
 
-/* Cascade rows carry their tier color (set inline) on the name + detail. */
+/* Cascade rows carry their tier color (set inline) on the accent name only;
+   the detail stays on the standard --dim so it always clears AA contrast
+   (a dimmed tier color, e.g. the top red tier, would fail on the dark panel). */
 .plate-row.cascade .rname {
   color: inherit;
   text-shadow: 0 0 12px currentColor;
 }
 
 .plate-row.cascade .rdetail {
-  color: inherit;
-  opacity: 0.62;
+  color: var(--dim);
 }
 
 .plate-total {

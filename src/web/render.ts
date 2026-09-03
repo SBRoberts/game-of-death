@@ -5,7 +5,7 @@
  * bloom; grain and a vignette sell the glass. The board is never React.
  */
 
-import { ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, RADICALS, type Duel } from '../sim'
+import { CHAIN_TIERS, ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, RADICALS, type Duel } from '../sim'
 import type { Impact } from '../sim'
 
 // Cell size is runtime state so the board can fill its container (HANDOFF §3).
@@ -883,6 +883,12 @@ export function render(
     ctx.shadowBlur = 12
     ctx.fillStyle = color
     ctx.fillText(`CHAIN ${Math.round(c.total)}`, cx, cy)
+    // Name the tier in text too, so the escalation reads without relying on
+    // color alone (the tier color is not remapped by the colorblind schemes).
+    if (c.tier >= 0) {
+      ctx.font = `600 ${Math.round(size * 0.42)}px ui-monospace, Menlo, monospace`
+      ctx.fillText(CHAIN_TIERS[c.tier].name, cx, cy + size * 0.72)
+    }
     ctx.shadowBlur = 0
   }
 

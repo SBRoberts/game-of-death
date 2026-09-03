@@ -1924,81 +1924,226 @@ canvas {
 
 /* ── title screen ──────────────────────────────────────────────────────── */
 .title-stage {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  overflow: hidden;
 }
 
 .title-screen {
+  position: relative;
   width: 100vw;
   height: 100vh;
+  overflow: hidden;
+  background: #04060b;
+}
+
+/* The specimen renders full-bleed; smooth (not pixelated) so the bloom is soft. */
+.title-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Cabinet-glass scanlines over everything. */
+.title-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0.16) 3px
+  );
+  opacity: 0.55;
+}
+
+/* Lab caption, upper-left — the microscope's slide label. */
+.title-caption {
+  position: absolute;
+  top: max(22px, 3vh);
+  left: max(24px, 3vw);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(127, 150, 255, 0.5);
+  pointer-events: none;
+}
+.title-caption .cap-strong {
+  color: rgba(150, 172, 255, 0.85);
+  font-weight: 600;
+}
+.title-caption .cap-dim {
+  color: rgba(127, 150, 255, 0.34);
+}
+
+/* The console: tagline + buttons + footer on a glass slab, bottom-center. */
+.title-console {
+  position: absolute;
+  left: 50%;
+  bottom: max(30px, 6vh);
+  transform: translateX(-50%);
+  z-index: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 22px;
-  padding: 24px;
-  background: var(--bg);
-}
-
-.title-canvas {
-  border-radius: 12px;
-  image-rendering: pixelated;
-  max-width: 94vw;
+  gap: 18px;
+  padding: 22px 30px 20px;
+  border-radius: 16px;
+  background: radial-gradient(120% 140% at 50% 0%, rgba(8, 14, 22, 0.66), rgba(4, 7, 12, 0.4));
+  backdrop-filter: blur(2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .title-tagline {
-  font-size: 13px;
-  letter-spacing: 0.28em;
+  font-size: 12.5px;
+  letter-spacing: 0.34em;
   text-transform: uppercase;
-  color: var(--dim);
+  color: rgba(150, 240, 190, 0.82);
   text-align: center;
+  text-shadow: 0 0 14px rgba(66, 245, 155, 0.35);
 }
 
 .title-actions {
   display: flex;
-  gap: 14px;
-  align-items: center;
+  gap: 16px;
+  align-items: stretch;
 }
 
 .title-btn {
-  font-size: 13px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-family: ui-monospace, Menlo, monospace;
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px 28px;
-  transition: border-color 130ms, transform 90ms, box-shadow 130ms, background 130ms;
+  color: #dfeaf2;
+  background: rgba(12, 18, 26, 0.72);
+  border: 1px solid rgba(120, 140, 165, 0.28);
+  border-radius: 10px;
+  padding: 15px 30px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 120ms cubic-bezier(0.2, 0.9, 0.3, 1), border-color 160ms, box-shadow 200ms,
+    background 160ms;
 }
-
+.title-btn .btn-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.title-btn .btn-sub {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: rgba(223, 234, 242, 0.55);
+  text-transform: lowercase;
+}
 .title-btn:hover {
-  border-color: var(--dim);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  border-color: rgba(160, 180, 205, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
-
 .title-btn:active {
-  transform: translateY(0);
+  transform: translateY(-1px);
+}
+.title-btn:focus-visible {
+  outline: 2px solid var(--you);
+  outline-offset: 3px;
 }
 
+/* START — the hero: filled GFP glass with a breathing bloom and red underglow. */
 .title-btn.primary {
-  color: var(--you);
-  border-color: var(--you);
-  background: rgba(66, 245, 155, 0.08);
-  box-shadow: 0 0 20px rgba(66, 245, 155, 0.12);
+  color: #04120a;
+  background: linear-gradient(180deg, #7dffc0, #35d98a);
+  border-color: rgba(150, 255, 200, 0.7);
+  box-shadow: 0 0 26px rgba(66, 245, 155, 0.35), 0 8px 26px rgba(255, 83, 64, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  animation: title-breathe 2.6s ease-in-out infinite;
+}
+.title-btn.primary .btn-label {
+  font-weight: 800;
+  color: #052012;
+}
+.title-btn.primary .btn-sub {
+  color: rgba(5, 32, 18, 0.62);
+}
+.title-btn.primary::after {
+  /* a slow sheen sweeping across the slab */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.4) 50%, transparent 70%);
+  transform: translateX(-140%);
+  animation: title-sheen 3.4s ease-in-out infinite;
+}
+.title-btn.primary:hover {
+  box-shadow: 0 0 40px rgba(66, 245, 155, 0.55), 0 10px 30px rgba(255, 83, 64, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-.title-btn.primary:hover {
-  background: rgba(66, 245, 155, 0.14);
-  box-shadow: 0 0 28px rgba(66, 245, 155, 0.22);
+@keyframes title-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 22px rgba(66, 245, 155, 0.3), 0 8px 26px rgba(255, 83, 64, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 38px rgba(66, 245, 155, 0.5), 0 8px 26px rgba(255, 83, 64, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+}
+@keyframes title-sheen {
+  0%,
+  62%,
+  100% {
+    transform: translateX(-140%);
+  }
+  82% {
+    transform: translateX(140%);
+  }
 }
 
 .title-foot {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--faint);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: rgba(127, 150, 255, 0.4);
   text-align: center;
+}
+
+.title-mute {
+  position: absolute;
+  right: max(20px, 2.4vw);
+  bottom: max(20px, 2.4vh);
+  z-index: 3;
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+  border-radius: 10px;
+  background: rgba(10, 16, 24, 0.6);
+  border: 1px solid rgba(120, 140, 165, 0.24);
+  cursor: pointer;
+  transition: border-color 140ms, transform 120ms;
+}
+.title-mute:hover {
+  border-color: rgba(160, 180, 205, 0.55);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-btn.primary,
+  .title-btn.primary::after {
+    animation: none !important;
+  }
 }
 
 /* ── how to play ───────────────────────────────────────────────────────── */

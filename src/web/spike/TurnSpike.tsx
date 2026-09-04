@@ -13,13 +13,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
-import { Duel, PLAYER, RIVAL, RADICALS, CHAIN_TIERS } from '../../sim'
+import { Duel, PLAYER, RIVAL, RADICALS, CHAIN_TIERS, projectImpact, type Impact } from '../../sim'
 
 const W = 72
 const H = 48
 const TURNS = 8
 const K_STEADY = 12
 const K_HOT = 24
+const PREVIEW = K_STEADY // the ghost projects the steady window — a WYSIWYG promise
 const COLOR = ['#05070c', '#42f59b', '#ff5340', '#7f96ff'] // dead / you / rival / radical
 
 /** Fit the board to the viewport so the hand + resolve buttons are never below the fold. */
@@ -55,6 +56,9 @@ export function TurnSpike() {
   const [sel, setSel] = useState<number | null>(null)
   const [rot, setRot] = useState(0)
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
+  const [proj, setProj] = useState<{ cells: Array<[number, number]>; valid: boolean; impact: Impact | null }>(
+    { cells: [], valid: false, impact: null },
+  )
   const [callout, setCallout] = useState<string>('')
   const [, forceDraw] = useState(0)
   const redraw = useCallback(() => forceDraw((n) => n + 1), [])
@@ -94,6 +98,21 @@ export function TurnSpike() {
   useEffect(() => {
     if (phase === 'deploy' && sel === null) setSel(firstAffordable())
   }, [phase, turn, sel, firstAffordable])
+
+  // Projection: simulate the hovered placement PREVIEW gens out (with vs without)
+  // and show what it wins / clears / settles — the WYSIWYG ghost. Only recomputes
+  // when the hovered CELL changes (hover is cell-quantized below).
+  useEffect(() => {
+    const d = duelRef.current
+    if (phase !== 'deploy' || sel === null || !hover) { setProj({ cells: [], valid: false, impact: null }); return }
+    const pattern = d.patternFor(PLAYER, d.hand[sel])
+    const cells = d.patternCells(pattern, hover.x, hover.y, rot)
+    const valid = d.ghostFor(PLAYER, d.hand[sel], hover.x, hover.y, rot).valid
+    const impact = valid
+      ? projectImpact(d.state, PLAYER, cells, PREVIEW, (g) => d.insetAt(g), pattern.cellType ?? 0)
+      : null
+    setProj({ cells, valid, impact })
+  }, [phase, sel, rot, turn, hover])
 
   // ── render ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -135,12 +154,29 @@ export function TurnSpike() {
       }
     ctx.shadowBlur = 0
 
-    // ghost preview
-    if (phase === 'deploy' && sel !== null && hover) {
-      const g = d.ghostFor(PLAYER, d.hand[sel], hover.x, hover.y, rot)
-      ctx.strokeStyle = g.valid ? '#42f59b' : '#ff5340'
-      ctx.lineWidth = 1.5
-      for (const [cx, cy] of g.cells) {
+    // projection ghost: where the placement lands, what it settles/clears K gens out
+    if (phase === 'deploy' && sel !== null && proj.cells.length) {
+      const ring = (idx: number, color: string, wide = false) => {
+        const x = (idx % W) * cell + cell / 2
+        const y = ((idx / W) | 0) * cell + cell / 2
+        ctx.strokeStyle = color
+        ctx.lineWidth = wide ? 2 : 1.25
+        ctx.beginPath()
+        ctx.arc(x, y, cell * 0.36, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      if (proj.valid && proj.impact) {
+        const lasting = new Set(proj.impact.lasting)
+        ctx.fillStyle = 'rgba(66,245,155,0.28)' // gained-but-churn: faint fill
+        for (const idx of proj.impact.gained)
+          if (!lasting.has(idx)) { const x = (idx % W) * cell, y = ((idx / W) | 0) * cell; ctx.fillRect(x + cell * 0.2, y + cell * 0.2, cell * 0.6, cell * 0.6) }
+        for (const idx of proj.impact.destroyed) ring(idx, 'rgba(255,83,64,0.85)') // enemies cleared
+        for (const idx of proj.impact.lasting) ring(idx, '#42f59b', true) // settles here → solid glow
+      }
+      // the shape you're dropping now (white so it reads over everything)
+      ctx.strokeStyle = proj.valid ? 'rgba(255,255,255,0.5)' : '#ff5340'
+      ctx.lineWidth = 1.25
+      for (const [cx, cy] of proj.cells) {
         if (cx < 0 || cx >= W || cy < 0 || cy >= H) continue
         ctx.beginPath()
         ctx.arc(cx * cell + cell / 2, cy * cell + cell / 2, cell * 0.36, 0, Math.PI * 2)
@@ -252,7 +288,11 @@ export function TurnSpike() {
           ref={canvasRef}
           style={{ width: boardW, height: H * cell, borderRadius: 8, cursor: phase === 'deploy' && sel !== null ? 'crosshair' : 'default' }}
           onClick={onClick}
-          onMouseMove={(e) => phase === 'deploy' && sel !== null && setHover(cellFromEvent(e))}
+          onMouseMove={(e) => {
+            if (phase !== 'deploy' || sel === null) return
+            const c = cellFromEvent(e)
+            setHover((h) => (h && h.x === c.x && h.y === c.y ? h : c)) // quantize to cell
+          }}
           onMouseLeave={() => setHover(null)}
         />
         {phase === 'resolve' && <div style={S.phaseTag}>RESOLVING…</div>}
@@ -291,8 +331,10 @@ export function TurnSpike() {
           <div style={S.actions}>
             <span style={S.hint}>
               {phase === 'resolve' ? 'watching the reel…'
-                : sel !== null ? `placing ${selName} — click a lit cell (R rotates)`
-                : 'pick a card (1–3)'}
+                : sel === null ? 'pick a card (1–3)'
+                : proj.valid && proj.impact
+                  ? `${selName}: projection +${proj.impact.lasting.length} settle · ${proj.impact.destroyed.length} cleared`
+                  : `placing ${selName} — hover a lit cell (R rotates)`}
             </span>
             <button style={S.steady} disabled={phase !== 'deploy'} onClick={() => resolve(K_STEADY)}>STEADY · {K_STEADY}g ⏎</button>
             <button style={S.hot} disabled={phase !== 'deploy'} onClick={() => resolve(K_HOT)}>HOT · {K_HOT}g (H)</button>

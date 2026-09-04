@@ -20,9 +20,8 @@ import { Duel, PLAYER, RIVAL, RADICALS, CHAIN_TIERS, projectImpact, type Impact 
 const W = 72
 const H = 48
 const TURNS = 8
-const K_STEADY = 12
-const K_HOT = 24
-const PREVIEW = K_STEADY
+const RESOLVE_GENS = 16 // one fixed resolution window (difficulty-for-reward lives in meta stakes, not here)
+const PREVIEW = RESOLVE_GENS // the ghost previews exactly what resolves — WYSIWYG
 const COLOR = ['#05070c', '#42f59b', '#ff5340', '#7f96ff']
 const GLOW = ['rgba(0,0,0,0)', 'rgba(66,245,155,0.55)', 'rgba(255,83,64,0.55)', 'rgba(127,150,255,0.5)']
 const CORE = [0, 0.92, 0.92, 0.52]
@@ -39,7 +38,7 @@ function fitCell(): number {
 function makeDuel(seed: string): Duel {
   const d = new Duel(
     seed,
-    { width: W, height: H, radicalsCount: 14, startBiomass: 40, ringGrace: 200, aiActEvery: K_STEADY },
+    { width: W, height: H, radicalsCount: 14, startBiomass: 40, ringGrace: 200, aiActEvery: 12 },
     [{ key: 'vampire', level: 3 }],
     [],
     'founders',
@@ -76,7 +75,7 @@ export function TurnSpike() {
     { cells: [], valid: false, impact: null },
   )
   const [callout, setCallout] = useState<Callout | null>(null)
-  const [wind, setWind] = useState<{ hot: boolean } | null>(null)
+  const [wind, setWind] = useState(false)
   const [rivalTag, setRivalTag] = useState(false)
   const [score, setScore] = useState<Score | null>(null)
   const [, forceDraw] = useState(0)
@@ -251,7 +250,7 @@ export function TurnSpike() {
   }
 
   // ── resolve: wind-up ceremony → reel (ritardando + hit-stop) → scorecard ──
-  const resolve = (K: number) => {
+  const resolve = () => {
     if (phase !== 'deploy') return
     const d = duelRef.current
     lastingRef.current = proj.impact?.lasting ?? []
@@ -259,12 +258,10 @@ export function TurnSpike() {
     setSel(null)
     setCallout(null)
     setHover(null)
-    const hot = K === K_HOT
-    setWind({ hot })
+    setWind(true)
     setPhase('winding')
-    let bioAtSteady = 0
     windRef.current = window.setTimeout(() => {
-      setWind(null)
+      setWind(false)
       setPhase('resolve')
       const banksBefore = d.bankedCombos.length
       let g = 0
@@ -273,7 +270,6 @@ export function TurnSpike() {
       const stepOnce = () => {
         d.tick()
         g++
-        if (hot && g === K_STEADY) bioAtSteady = d.biomass[PLAYER]
         let freeze = 0
         if (d.bankedCombos.length > banksBefore) {
           const c = d.bankedCombos[d.bankedCombos.length - 1]
@@ -284,18 +280,17 @@ export function TurnSpike() {
         if (g >= tagUntil && rivalTag) setRivalTag(false)
         prevRival = d.state.pops[RIVAL]
         redraw()
-        if (g >= K || d.status !== 'running') {
-          if (hot && bioAtSteady) d.biomass[PLAYER] = bioAtSteady
+        if (g >= RESOLVE_GENS || d.status !== 'running') {
           setRivalTag(false)
           timerRef.current = window.setTimeout(finishReel, 320) // let the final board land before the payoff
           return
         }
-        const t = g / K
+        const t = g / RESOLVE_GENS
         const decel = t > 0.66 ? ((t - 0.66) / 0.34) ** 2 * 165 : 0 // ritardando into the landing
         timerRef.current = window.setTimeout(stepOnce, 52 + decel + freeze)
       }
       timerRef.current = window.setTimeout(stepOnce, 90)
-    }, hot ? 520 : 380)
+    }, 400)
   }
 
   const finishReel = () => {
@@ -341,8 +336,7 @@ export function TurnSpike() {
       if (phase !== 'deploy') return
       if (e.key >= '1' && e.key <= '3') setSel(Number(e.key) - 1)
       else if (e.key === 'r' || e.key === 'R') setRot((r) => (r + 1) % 4)
-      else if (e.key === 'Enter') resolve(K_STEADY)
-      else if (e.key === 'h' || e.key === 'H') resolve(K_HOT)
+      else if (e.key === 'Enter' || e.key === ' ') resolve()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -353,7 +347,7 @@ export function TurnSpike() {
     flashRef.current = null
     seedRef.current = 'spike-' + Math.floor(performance.now() % 100000)
     duelRef.current = makeDuel(seedRef.current)
-    setTurn(1); setSel(null); setRot(0); setCallout(null); setWind(null); setRivalTag(false); setScore(null); setHover(null); setPhase('deploy')
+    setTurn(1); setSel(null); setRot(0); setCallout(null); setWind(false); setRivalTag(false); setScore(null); setHover(null); setPhase('deploy')
     computeReach(); redraw()
   }
 
@@ -419,8 +413,8 @@ export function TurnSpike() {
         {phase === 'resolve' && <div style={S.phaseTag}>◉ RESOLVING</div>}
         {rivalTag && <div style={S.rivalTag}>RIVAL DEPLOYS</div>}
         {wind && (
-          <div key={wind.hot ? 'h' : 's'} style={{ ...S.placard, color: wind.hot ? '#ff8a70' : '#42f59b', textShadow: `0 0 34px ${wind.hot ? 'rgba(255,138,112,.6)' : 'rgba(66,245,155,.5)'}` }}>
-            {wind.hot ? `HOT ×${K_HOT}` : `STEADY ×${K_STEADY}`}
+          <div style={{ ...S.placard, color: '#42f59b', textShadow: '0 0 34px rgba(66,245,155,.5)' }}>
+            INCUBATE ×{RESOLVE_GENS}
           </div>
         )}
         {(phase === 'resolve' || phase === 'settled') && callout && (
@@ -481,11 +475,8 @@ export function TurnSpike() {
                 : sel === null ? 'pick a card (1–3)'
                 : 'hover the lit zone to preview · click to place · R rotates'}
             </span>
-            <button className="spk-btn" style={S.steady} disabled={phase !== 'deploy'} onClick={() => resolve(K_STEADY)}>
-              STEADY · {K_STEADY}g ⏎<em style={S.sub}>safe · rival moves once</em>
-            </button>
-            <button className="spk-btn" style={S.hot} disabled={phase !== 'deploy'} onClick={() => resolve(K_HOT)}>
-              HOT · {K_HOT}g (H)<em style={S.sub}>greedy · no extra income · rival ×2</em>
+            <button className="spk-btn" style={S.resolve} disabled={phase !== 'deploy'} onClick={resolve}>
+              INCUBATE · {RESOLVE_GENS}g ⏎<em style={S.sub}>run the culture forward</em>
             </button>
           </div>
         </div>
@@ -538,8 +529,7 @@ const S: Record<string, CSSProperties> = {
   cardMeta: { fontSize: 11, color: '#8391a8' },
   actions: { display: 'flex', alignItems: 'center', gap: 12 },
   hint: { fontSize: 12.5, color: '#8391a8', marginRight: 'auto' },
-  steady: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '7px 14px', background: 'rgba(66,245,155,.1)', border: '1px solid #42f59b', color: '#42f59b', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 1 },
-  hot: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '7px 14px', background: 'rgba(255,138,112,.12)', border: '1px solid #ff8a70', color: '#ff8a70', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 1 },
+  resolve: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '8px 20px', background: 'rgba(66,245,155,.14)', border: '1px solid #42f59b', color: '#42f59b', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 1 },
   sub: { fontSize: 9.5, fontWeight: 400, fontStyle: 'normal', opacity: 0.75, letterSpacing: 0.2, marginTop: 2 },
   primary: { marginTop: 20, padding: '12px 24px', background: '#42f59b', border: 'none', color: '#05070c', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 2 },
 }

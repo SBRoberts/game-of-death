@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "harness": "tsx src/harness/selfplay.ts",
     "balance": "tsx src/harness/genebalance.ts",
-    "draftbalance": "tsx src/harness/draftbalance.ts"
+    "draftbalance": "tsx src/harness/draftbalance.ts",
+    "classify": "tsx src/harness/classify.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

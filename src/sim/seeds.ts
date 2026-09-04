@@ -115,6 +115,23 @@ OO..OOO
     cells: GOSPER,
   },
   {
+    id: 'founders',
+    name: 'Founders',
+    category: 'oscillator',
+    blurb: 'A designed base — spaced still-lifes and blinkers that hold their shape and gently pulse. Legible from gen 0; nothing boils.',
+    ashCost: 0,
+    // Validated horizon-0 by `npm run classify`: components are ≥6 cells apart so
+    // no oscillator phase reaches a neighbour — the whole set is stable (p2).
+    cells: [
+      [0, 0], [1, 0], [0, 1], [1, 1], // block
+      [10, 0], [11, 0], [9, 1], [12, 1], [10, 2], [11, 2], // beehive
+      [0, 9], [1, 9], [2, 9], // blinker
+      [9, 10], [10, 10], [9, 11], [10, 11], // block
+      [18, 4], [19, 4], [20, 4], // blinker
+      [19, 11], [20, 11], [18, 12], [21, 12], [19, 13], [20, 13], // beehive
+    ],
+  },
+  {
     id: 'diehard',
     name: 'Diehard',
     category: 'challenge',

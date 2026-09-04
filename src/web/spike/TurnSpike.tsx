@@ -17,11 +17,17 @@ import { Duel, PLAYER, RIVAL, RADICALS, CHAIN_TIERS } from '../../sim'
 
 const W = 72
 const H = 48
-const CELL = 15
 const TURNS = 8
 const K_STEADY = 12
 const K_HOT = 24
 const COLOR = ['#05070c', '#42f59b', '#ff5340', '#7f96ff'] // dead / you / rival / radical
+
+/** Fit the board to the viewport so the hand + resolve buttons are never below the fold. */
+function fitCell(): number {
+  const availW = (typeof window !== 'undefined' ? window.innerWidth : 1200) - 48
+  const availH = (typeof window !== 'undefined' ? window.innerHeight : 900) - 250 // HUD + dock + note + padding
+  return Math.max(7, Math.min(16, Math.floor(Math.min(availW / W, availH / H))))
+}
 
 function makeDuel(seed: string): Duel {
   return new Duel(
@@ -43,6 +49,7 @@ export function TurnSpike() {
   const reachRef = useRef<Uint8Array>(new Uint8Array(W * H))
   const timerRef = useRef<number>(0)
 
+  const [cell, setCell] = useState(fitCell())
   const [phase, setPhase] = useState<Phase>('deploy')
   const [turn, setTurn] = useState(1)
   const [sel, setSel] = useState<number | null>(null)
@@ -51,6 +58,13 @@ export function TurnSpike() {
   const [callout, setCallout] = useState<string>('')
   const [, forceDraw] = useState(0)
   const redraw = useCallback(() => forceDraw((n) => n + 1), [])
+  const boardW = W * cell
+
+  useEffect(() => {
+    const onResize = () => setCell(fitCell())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   // ── reach mask: cells within the player's placement radius of a living cell ──
   const computeReach = useCallback(() => {
@@ -70,28 +84,41 @@ export function TurnSpike() {
 
   useEffect(() => { computeReach() }, [computeReach])
 
+  const firstAffordable = useCallback((): number | null => {
+    const d = duelRef.current
+    const i = d.hand.findIndex((id) => d.biomass[PLAYER] >= d.patternFor(PLAYER, id).cost)
+    return i >= 0 ? i : null
+  }, [])
+
+  // Keep a card selected during deploy so the board is immediately interactive.
+  useEffect(() => {
+    if (phase === 'deploy' && sel === null) setSel(firstAffordable())
+  }, [phase, turn, sel, firstAffordable])
+
   // ── render ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const dpr = Math.min(2, window.devicePixelRatio || 1)
-    canvas.width = W * CELL * dpr
-    canvas.height = H * CELL * dpr
+    canvas.width = boardW * dpr
+    canvas.height = H * cell * dpr
     const ctx = canvas.getContext('2d')!
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const d = duelRef.current
     const cells = d.state.cells
 
     ctx.fillStyle = COLOR[0]
-    ctx.fillRect(0, 0, W * CELL, H * CELL)
+    ctx.fillRect(0, 0, boardW, H * cell)
 
-    // reach tint (deploy only, with a card selected)
+    // reach zone (deploy only, with a card selected) — clearly visible
     if (phase === 'deploy' && sel !== null) {
-      ctx.fillStyle = 'rgba(66,245,155,0.06)'
       const mask = reachRef.current
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++)
-          if (mask[y * W + x] && cells[y * W + x] === 0) ctx.fillRect(x * CELL, y * CELL, CELL, CELL)
+          if (mask[y * W + x] && cells[y * W + x] === 0) {
+            ctx.fillStyle = 'rgba(66,245,155,0.10)'
+            ctx.fillRect(x * cell, y * cell, cell - 1, cell - 1)
+          }
     }
 
     // live cells as puncta
@@ -103,21 +130,20 @@ export function TurnSpike() {
         ctx.shadowColor = COLOR[f]
         ctx.shadowBlur = f === RADICALS ? 3 : 6
         ctx.beginPath()
-        ctx.arc(x * CELL + CELL / 2, y * CELL + CELL / 2, CELL * 0.36, 0, Math.PI * 2)
+        ctx.arc(x * cell + cell / 2, y * cell + cell / 2, cell * 0.36, 0, Math.PI * 2)
         ctx.fill()
       }
     ctx.shadowBlur = 0
 
     // ghost preview
     if (phase === 'deploy' && sel !== null && hover) {
-      const id = d.hand[sel]
-      const g = d.ghostFor(PLAYER, id, hover.x, hover.y, rot)
+      const g = d.ghostFor(PLAYER, d.hand[sel], hover.x, hover.y, rot)
       ctx.strokeStyle = g.valid ? '#42f59b' : '#ff5340'
       ctx.lineWidth = 1.5
       for (const [cx, cy] of g.cells) {
         if (cx < 0 || cx >= W || cy < 0 || cy >= H) continue
         ctx.beginPath()
-        ctx.arc(cx * CELL + CELL / 2, cy * CELL + CELL / 2, CELL * 0.36, 0, Math.PI * 2)
+        ctx.arc(cx * cell + cell / 2, cy * cell + cell / 2, cell * 0.36, 0, Math.PI * 2)
         ctx.stroke()
       }
     }
@@ -125,7 +151,7 @@ export function TurnSpike() {
 
   const cellFromEvent = (e: MouseEvent): { x: number; y: number } => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    return { x: Math.floor((e.clientX - rect.left) / CELL), y: Math.floor((e.clientY - rect.top) / CELL) }
+    return { x: Math.floor((e.clientX - rect.left) / cell), y: Math.floor((e.clientY - rect.top) / cell) }
   }
 
   const onClick = (e: MouseEvent) => {
@@ -134,7 +160,7 @@ export function TurnSpike() {
     const d = duelRef.current
     if (!d.ghostFor(PLAYER, d.hand[sel], x, y, rot).valid) return
     d.playCard(sel, x, y, rot)
-    setSel(null)
+    setSel(null) // the auto-select effect re-arms the next affordable card
     setRot(0)
     computeReach()
     redraw()
@@ -151,7 +177,6 @@ export function TurnSpike() {
     timerRef.current = window.setInterval(() => {
       d.tick()
       g++
-      // surface the biggest chain that banked this turn, live
       if (d.bankedCombos.length > banksBefore) {
         const c = d.bankedCombos[d.bankedCombos.length - 1]
         setCallout(`${CHAIN_TIERS[c.tier]?.name ?? 'CHAIN'} +${c.total}`)
@@ -175,6 +200,7 @@ export function TurnSpike() {
       return
     }
     setTurn((t) => t + 1)
+    setCallout('')
     computeReach()
     setPhase('deploy')
   }
@@ -206,28 +232,30 @@ export function TurnSpike() {
   const you = d.state.pops[PLAYER]
   const rival = d.state.pops[RIVAL]
   const s = d.summary
+  const selName = sel !== null ? d.patternFor(PLAYER, d.hand[sel]).name : null
 
   return (
     <div style={S.stage}>
-      <div style={S.hud}>
+      <div style={{ ...S.hud, width: boardW }}>
         <span style={S.badge}>TURN {Math.min(turn, TURNS)}/{TURNS}</span>
         <span style={S.big}>◈ {Math.floor(d.biomass[PLAYER])}</span>
         <span style={{ color: COLOR[1] }}>you {you}</span>
         <span style={{ color: '#5c6a80' }}>vs</span>
         <span style={{ color: COLOR[2] }}>rival {rival}</span>
-        {/* player-attributable signal: combat kills + conversions + peak chain (raw deaths would count soup self-churn) */}
+        {/* player-attributable signal: combat kills + conversions + peak chain */}
         <span style={{ color: '#8391a8' }}>☠ {d.state.combatDeaths[RIVAL]} · converted {s.radicalsClaimed + s.rivalConverted} · chain {Math.round(d.peakChain)}</span>
         <button style={S.ghostBtn} onClick={restart}>↺ new</button>
       </div>
 
-      <div style={S.boardWrap}>
+      <div style={{ ...S.boardWrap, width: boardW, height: H * cell }}>
         <canvas
           ref={canvasRef}
-          style={{ width: W * CELL, height: H * CELL, borderRadius: 8, cursor: phase === 'deploy' && sel !== null ? 'crosshair' : 'default' }}
+          style={{ width: boardW, height: H * cell, borderRadius: 8, cursor: phase === 'deploy' && sel !== null ? 'crosshair' : 'default' }}
           onClick={onClick}
           onMouseMove={(e) => phase === 'deploy' && sel !== null && setHover(cellFromEvent(e))}
           onMouseLeave={() => setHover(null)}
         />
+        {phase === 'resolve' && <div style={S.phaseTag}>RESOLVING…</div>}
         {phase === 'resolve' && callout && <div style={S.callout}>{callout}</div>}
         {phase === 'over' && (
           <div style={S.overlay}>
@@ -241,7 +269,7 @@ export function TurnSpike() {
       </div>
 
       {phase !== 'over' && (
-        <div style={S.dock}>
+        <div style={{ ...S.dock, width: boardW }}>
           <div style={S.hand}>
             {d.hand.map((id, i) => {
               const p = d.patternFor(PLAYER, id)
@@ -261,14 +289,18 @@ export function TurnSpike() {
             })}
           </div>
           <div style={S.actions}>
-            <span style={S.hint}>{sel !== null ? 'click a lit cell to place · R rotates' : 'pick a card (1–3), place, then resolve'}</span>
+            <span style={S.hint}>
+              {phase === 'resolve' ? 'watching the reel…'
+                : sel !== null ? `placing ${selName} — click a lit cell (R rotates)`
+                : 'pick a card (1–3)'}
+            </span>
             <button style={S.steady} disabled={phase !== 'deploy'} onClick={() => resolve(K_STEADY)}>STEADY · {K_STEADY}g ⏎</button>
             <button style={S.hot} disabled={phase !== 'deploy'} onClick={() => resolve(K_HOT)}>HOT · {K_HOT}g (H)</button>
           </div>
         </div>
       )}
 
-      <div style={S.note}>
+      <div style={{ ...S.note, width: boardW }}>
         Watching for: <b>attribution</b> (after a resolve, can you say "I flipped that front"?) ·
         <b> spin</b> (is the reel satisfying?) · <b>chain</b> (does the vampire build visibly fire?) ·
         <b> greed</b> (is HOT a real temptation?)
@@ -278,17 +310,18 @@ export function TurnSpike() {
 }
 
 const S: Record<string, CSSProperties> = {
-  stage: { minHeight: '100vh', background: '#05070c', color: '#c3cfe0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: 20, fontFamily: 'ui-monospace, Menlo, monospace' },
-  hud: { display: 'flex', alignItems: 'center', gap: 18, fontSize: 13, width: W * CELL },
+  stage: { minHeight: '100vh', background: '#05070c', color: '#c3cfe0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 16, fontFamily: 'ui-monospace, Menlo, monospace' },
+  hud: { display: 'flex', alignItems: 'center', gap: 16, fontSize: 13 },
   badge: { fontWeight: 700, letterSpacing: 2, color: '#c3cfe0' },
   big: { fontSize: 20, fontWeight: 700, color: '#e8c463' },
   ghostBtn: { marginLeft: 'auto', background: 'transparent', color: '#8391a8', border: '1px solid #1b2331', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' },
   boardWrap: { position: 'relative', border: '1px solid #1b2331', borderRadius: 8, lineHeight: 0 },
+  phaseTag: { position: 'absolute', top: 10, left: 12, fontSize: 11, letterSpacing: 3, color: '#8391a8', pointerEvents: 'none' },
   callout: { position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', fontSize: 26, fontWeight: 700, letterSpacing: 4, color: '#ffd84a', textShadow: '0 0 20px rgba(255,216,74,.6)', pointerEvents: 'none' },
   overlay: { position: 'absolute', inset: 0, background: 'rgba(5,7,12,0.82)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
-  dock: { display: 'flex', flexDirection: 'column', gap: 10, width: W * CELL },
+  dock: { display: 'flex', flexDirection: 'column', gap: 10 },
   hand: { display: 'flex', gap: 10 },
-  card: { flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '10px 12px', textAlign: 'left', background: '#0b0f16', border: '1px solid #1b2331', borderRadius: 10, color: '#c3cfe0', cursor: 'pointer', position: 'relative' },
+  card: { flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '8px 12px', textAlign: 'left', background: '#0b0f16', border: '1px solid #1b2331', borderRadius: 10, color: '#c3cfe0', cursor: 'pointer', position: 'relative' },
   cardSel: { border: '1px solid #42f59b', boxShadow: '0 0 16px rgba(66,245,155,.25)' },
   cardKey: { position: 'absolute', top: 8, right: 10, fontSize: 10, color: '#45536b' },
   cardName: { fontWeight: 700, fontSize: 14 },
@@ -298,5 +331,5 @@ const S: Record<string, CSSProperties> = {
   steady: { padding: '10px 16px', background: 'rgba(66,245,155,.1)', border: '1px solid #42f59b', color: '#42f59b', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 1 },
   hot: { padding: '10px 16px', background: 'rgba(255,138,112,.12)', border: '1px solid #ff8a70', color: '#ff8a70', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 1 },
   primary: { marginTop: 18, padding: '12px 22px', background: '#42f59b', border: 'none', color: '#05070c', borderRadius: 8, cursor: 'pointer', fontWeight: 700, letterSpacing: 2 },
-  note: { fontSize: 11.5, color: '#5c6a80', maxWidth: W * CELL, lineHeight: 1.6 },
+  note: { fontSize: 11.5, color: '#5c6a80', lineHeight: 1.6 },
 }

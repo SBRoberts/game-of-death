@@ -23,15 +23,17 @@ const TURNS = 8
 const RESOLVE_GENS = 16 // one fixed resolution window (difficulty-for-reward lives in meta stakes, not here)
 const PREVIEW = RESOLVE_GENS // the ghost previews exactly what resolves — WYSIWYG
 const COLOR = ['#05070c', '#42f59b', '#ff5340', '#7f96ff']
-// Confocal LUT (per HANDOFF §4.0): each faction is a grayscale channel pseudo-
-// coloured and SUMMED additively, so where green sits in red's PSF the sum warms
-// toward gold — contested ground announces itself with no UI element.
+// Faction emission colours. Additive compositing means green over red sums toward
+// gold — contested ground warms on its own, no UI element.
 const LUT: Array<[number, number, number] | null> = [null, [66, 245, 155], [255, 83, 64], [127, 150, 255]]
-const CH_CORE_ALPHA = [0, 1, 1, 0.72] // radicals read dimmer
-// PSF, in buffer-px (buffer is 2px/cell, upscaled → the rest of the PSF for free)
-const WING_BLUR = 3.4
-const CORE_BLUR = 0.85
-const WING_ALPHA = 0.26
+
+// Three aesthetic directions, selectable via ?look=  (default fluoro).
+type Look = 'fluoro' | 'crt' | 'eyepiece'
+const LOOK: Look =
+  ((typeof location !== 'undefined' && (new URLSearchParams(location.search).get('look') as Look)) || 'fluoro')
+const mixWhite = (v: number, t: number) => Math.round(v + (255 - v) * t)
+const mixBlack = (v: number, t: number) => Math.round(v * (1 - t))
+const rgb = (c: [number, number, number]) => `rgb(${c[0]},${c[1]},${c[2]})`
 
 /** Eyepiece reticle ticked into the board's inner edge (HANDOFF §4.3). */
 function graticule(ctx: CanvasRenderingContext2D, boardW: number, boardH: number, cell: number) {
@@ -92,10 +94,11 @@ export function TurnSpike() {
   const flashRef = useRef<{ cells: Array<[number, number]>; t0: number } | null>(null)
   const snapRef = useRef({ you: 0, kills: 0, conv: 0 })
   const lastingRef = useRef<number[]>([])
-  // Optics buffers — allocated once, reused every frame (HANDOFF §10).
+  // Optics buffers — allocated once per board size, reused every frame.
   const opticsRef = useRef<{
-    src: HTMLCanvasElement; blur: HTMLCanvasElement
-    noise: HTMLCanvasElement[]; hot: Array<[number, number, number]>
+    key: string
+    bloom: HTMLCanvasElement; bloomB: HTMLCanvasElement; persist: HTMLCanvasElement; dust: HTMLCanvasElement
+    noise: HTMLCanvasElement; hot: Array<[number, number, number]>
   } | null>(null)
 
   const [cell, setCell] = useState(fitCell())
@@ -162,33 +165,39 @@ export function TurnSpike() {
     setProj({ cells, valid, impact })
   }, [phase, sel, rot, turn, hover])
 
-  const buildOptics = useCallback(() => {
-    if (opticsRef.current) return opticsRef.current
+  const buildOptics = useCallback((bW: number, bH: number) => {
+    const key = `${bW}x${bH}`
+    if (opticsRef.current?.key === key) return opticsRef.current
     const mk = (w: number, h: number) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c }
-    const src = mk(W * 2, H * 2)
-    const blur = mk(W * 2, H * 2)
-    // three pre-baked shot-noise tiles (Poisson-ish film grain, cycled)
-    const noise = [0, 1, 2].map(() => {
-      const c = mk(128, 128)
-      const nc = c.getContext('2d')!
-      const img = nc.createImageData(128, 128)
-      for (let i = 0; i < img.data.length; i += 4) {
-        const v = 128 + (Math.random() - 0.5) * 2 * 34
-        img.data[i] = img.data[i + 1] = img.data[i + 2] = v
-        img.data[i + 3] = 255
-      }
-      nc.putImageData(img, 0, 0)
-      return c
-    })
-    // 11 seeded fixed hot pixels (fraction x, fraction y, alpha)
+    const bloom = mk(bW, bH), bloomB = mk(bW, bH), persist = mk(bW, bH)
+    // one static noise tile (grain)
+    const noise = mk(128, 128)
+    const nc = noise.getContext('2d')!, img = nc.createImageData(128, 128)
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = 128 + (Math.random() - 0.5) * 2 * 40
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255
+    }
+    nc.putImageData(img, 0, 0)
     let s = 0x2f6e2b1
     const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
     const hot: Array<[number, number, number]> = Array.from({ length: 11 }, () => [rnd(), rnd(), 0.4 + rnd() * 0.4])
-    opticsRef.current = { src, blur, noise, hot }
+    // eyepiece dust: seeded motes + coverslip lines, baked once
+    const dust = mk(bW, bH), dc = dust.getContext('2d')!
+    for (let i = 0; i < 44; i++) {
+      const x = rnd() * bW, y = rnd() * bH, r = 2 + rnd() * 5, a = 0.05 + rnd() * 0.07
+      const g = dc.createRadialGradient(x, y, 0, x, y, r)
+      g.addColorStop(0, `rgba(${rnd() > 0.5 ? '210,200,180' : '180,200,220'},${a})`)
+      g.addColorStop(1, 'rgba(0,0,0,0)')
+      dc.fillStyle = g; dc.beginPath(); dc.arc(x, y, r, 0, Math.PI * 2); dc.fill()
+    }
+    for (let i = 0; i < 6; i++) { dc.fillStyle = 'rgba(10,14,20,0.5)'; dc.fillRect(rnd() * bW, rnd() * bH, 1, 1) }
+    dc.strokeStyle = 'rgba(200,220,255,0.09)'; dc.lineWidth = 1
+    dc.beginPath(); dc.moveTo(bW * 0.06, 0); dc.lineTo(bW * 0.12, bH); dc.stroke()
+    opticsRef.current = { key, bloom, bloomB, persist, dust, noise, hot }
     return opticsRef.current
   }, [])
 
-  // ── render — the confocal optics pipeline (HANDOFF §4.0) ─────────────────
+  // ── render — three selectable looks over a shared crisp-cell baseline ─────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -199,115 +208,167 @@ export function TurnSpike() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const d = duelRef.current
     const cells = d.state.cells
-    const opt = buildOptics()
-    const bw = W * 2, bh = H * 2
+    const opt = buildOptics(boardW, boardH)
+    const C = cell
+    const at = (x: number, y: number) => [x * C + C / 2, y * C + C / 2] as const
+    const forEachLive = (fn: (x: number, y: number, f: number) => void) => {
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const f = cells[y * W + x]; if (f) fn(x, y, f) }
+    }
 
-    // 1. background + faint linear illumination gradient
-    ctx.fillStyle = '#05070d'
-    ctx.fillRect(0, 0, boardW, boardH)
-    const illum = ctx.createLinearGradient(0, 0, boardW, boardH)
-    illum.addColorStop(0, 'rgba(30,44,66,0.16)')
-    illum.addColorStop(0.5, 'rgba(22,32,50,0.06)')
-    illum.addColorStop(1, 'rgba(30,44,66,0.14)')
-    ctx.fillStyle = illum
-    ctx.fillRect(0, 0, boardW, boardH)
+    // ── FIELD ───────────────────────────────────────────────────────────────
+    if (LOOK === 'crt') {
+      const base = ctx.createRadialGradient(boardW / 2, boardH / 2, 0, boardW / 2, boardH / 2, boardW * 0.62)
+      base.addColorStop(0, '#06170e'); base.addColorStop(1, '#030a06')
+      ctx.fillStyle = base; ctx.fillRect(0, 0, boardW, boardH)
+      const glow = ctx.createRadialGradient(boardW / 2, boardH / 2, 0, boardW / 2, boardH / 2, boardW * 0.55)
+      glow.addColorStop(0, 'rgba(90,255,170,0.05)'); glow.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = glow; ctx.fillRect(0, 0, boardW, boardH)
+      ctx.globalCompositeOperation = 'source-over'
+      // oscilloscope grid every 8 cells
+      ctx.strokeStyle = 'rgba(120,255,180,0.05)'; ctx.lineWidth = 1; ctx.beginPath()
+      for (let x = 8; x < W; x += 8) { const px = Math.round(x * C) + 0.5; ctx.moveTo(px, 0); ctx.lineTo(px, boardH) }
+      for (let y = 8; y < H; y += 8) { const py = Math.round(y * C) + 0.5; ctx.moveTo(0, py); ctx.lineTo(boardW, py) }
+      ctx.stroke()
+    } else if (LOOK === 'eyepiece') {
+      const base = ctx.createRadialGradient(boardW * 0.47, boardH * 0.44, 0, boardW * 0.47, boardH * 0.44, boardW * 0.66)
+      base.addColorStop(0, '#10161f'); base.addColorStop(0.6, '#0a0f18'); base.addColorStop(1, '#05070d')
+      ctx.fillStyle = base; ctx.fillRect(0, 0, boardW, boardH)
+      ctx.drawImage(opt.dust, 0, 0)
+    } else { // fluoro
+      ctx.fillStyle = '#05080d'; ctx.fillRect(0, 0, boardW, boardH)
+      const kohler = ctx.createRadialGradient(boardW / 2, boardH * 0.44, 0, boardW / 2, boardH * 0.44, boardW * 0.6)
+      kohler.addColorStop(0, 'rgba(30,50,70,0.06)'); kohler.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = kohler; ctx.fillRect(0, 0, boardW, boardH)
+    }
 
-    // reach zone (illuminated substrate; drawn under the signal so puncta glow over it)
+    // reach zone (deploy substrate)
     if (phase === 'deploy' && sel !== null) {
-      ctx.fillStyle = 'rgba(66,245,155,0.08)'
+      ctx.fillStyle = 'rgba(66,245,155,0.07)'
       const mask = reachRef.current
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++)
-          if (mask[y * W + x] && cells[y * W + x] === 0) ctx.fillRect(x * cell, y * cell, cell, cell)
+          if (mask[y * W + x] && cells[y * W + x] === 0) ctx.fillRect(x * C, y * C, C, C)
     }
 
-    // 2. per channel (radicals → rival → player): PSF wings then core, additive
-    const sctx = opt.src.getContext('2d')!
-    const bctx = opt.blur.getContext('2d')!
-    ctx.imageSmoothingEnabled = true
-    for (const f of [RADICALS, RIVAL, PLAYER]) {
-      const [r, g, b] = LUT[f]!
-      sctx.clearRect(0, 0, bw, bh)
-      sctx.fillStyle = `rgb(${r},${g},${b})`
-      for (let y = 0; y < H; y++)
-        for (let x = 0; x < W; x++)
-          if (cells[y * W + x] === f) sctx.fillRect(x * 2, y * 2, 2, 2)
+    // ── CORE-ONLY BLOOM (the baseline fix): sub-cell blur so halos never cross ─
+    const bl = opt.bloom.getContext('2d')!, blb = opt.bloomB.getContext('2d')!
+    bl.clearRect(0, 0, boardW, boardH)
+    forEachLive((x, y, f) => {
+      const [px, py] = at(x, y)
+      bl.fillStyle = rgb(LUT[f]!); bl.globalAlpha = f === RADICALS ? 0.6 : 1
+      bl.beginPath(); bl.arc(px, py, C * 0.18, 0, Math.PI * 2); bl.fill()
+    })
+    bl.globalAlpha = 1
+    blb.clearRect(0, 0, boardW, boardH); blb.filter = `blur(${Math.max(2, C * 0.22)}px)`; blb.drawImage(opt.bloom, 0, 0); blb.filter = 'none'
+    const drawBloom = (alpha: number) => { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = alpha; ctx.drawImage(opt.bloomB, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over' }
+
+    // eyepiece: bloom sits UNDER the opaque cells
+    if (LOOK === 'eyepiece') drawBloom(0.5)
+
+    // ── CELLS (per look; every look keeps a hard dark gutter) ─────────────────
+    if (LOOK === 'crt') {
+      // P7 persistence ghost trails
+      const pc = opt.persist.getContext('2d')!
+      pc.globalCompositeOperation = 'source-over'; pc.fillStyle = 'rgba(3,12,7,0.35)'; pc.fillRect(0, 0, boardW, boardH)
+      pc.globalCompositeOperation = 'lighter'
+      forEachLive((x, y, f) => { pc.fillStyle = rgb(LUT[f]!); pc.globalAlpha = 0.5; pc.fillRect(x * C + C * 0.14, y * C + C * 0.14, C * 0.72, C * 0.72) })
+      pc.globalAlpha = 1
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.6; ctx.drawImage(opt.persist, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
+      // phosphor tiles
+      const s2 = C * 0.78, o2 = (C - s2) / 2, rr = Math.min(2, C * 0.18)
+      forEachLive((x, y, f) => {
+        ctx.fillStyle = rgb(LUT[f]!); ctx.globalAlpha = 0.92
+        ctx.beginPath(); ctx.roundRect(x * C + o2, y * C + o2, s2, s2, rr); ctx.fill()
+      })
+      ctx.globalAlpha = 1
+      const s3 = C * 0.34, o3 = (C - s3) / 2
       ctx.globalCompositeOperation = 'lighter'
-      // wings
-      bctx.clearRect(0, 0, bw, bh); bctx.filter = `blur(${WING_BLUR}px)`; bctx.drawImage(opt.src, 0, 0); bctx.filter = 'none'
-      ctx.globalAlpha = WING_ALPHA
-      ctx.drawImage(opt.blur, 0, 0, boardW, boardH)
-      // core
-      bctx.clearRect(0, 0, bw, bh); bctx.filter = `blur(${CORE_BLUR}px)`; bctx.drawImage(opt.src, 0, 0); bctx.filter = 'none'
-      ctx.globalAlpha = CH_CORE_ALPHA[f]
-      ctx.drawImage(opt.blur, 0, 0, boardW, boardH)
+      forEachLive((x, y, f) => {
+        const c = LUT[f]!; ctx.fillStyle = `rgb(${mixWhite(c[0], 0.6)},${mixWhite(c[1], 0.6)},${mixWhite(c[2], 0.6)})`
+        ctx.beginPath(); ctx.roundRect(x * C + o3, y * C + o3, s3, s3, rr * 0.6); ctx.fill()
+      })
+      ctx.globalCompositeOperation = 'source-over'
+    } else if (LOOK === 'eyepiece') {
+      forEachLive((x, y, f) => {
+        const c = LUT[f]!, [px, py] = at(x, y)
+        ctx.fillStyle = rgb(c); ctx.beginPath(); ctx.arc(px, py, C * 0.42, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = `rgb(${mixBlack(c[0], 0.35)},${mixBlack(c[1], 0.35)},${mixBlack(c[2], 0.35)})`; ctx.lineWidth = Math.max(1, C * 0.12)
+        ctx.beginPath(); ctx.arc(px, py, C * 0.42, 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = `rgb(${mixWhite(c[0], 0.9)},${mixWhite(c[1], 0.9)},${mixWhite(c[2], 0.9)})`
+        ctx.beginPath(); ctx.arc(px, py, C * 0.17, 0, Math.PI * 2); ctx.fill()
+      })
+    } else { // fluoro — cytoplasm disc + brighter membrane + hot nucleus
+      forEachLive((x, y, f) => {
+        const c = LUT[f]!, [px, py] = at(x, y)
+        ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.88)`; ctx.beginPath(); ctx.arc(px, py, C * 0.40, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = `rgb(${Math.min(255, c[0] + 80)},${Math.min(255, c[1] + 80)},${Math.min(255, c[2] + 80)})`; ctx.lineWidth = Math.max(1, C * 0.12); ctx.globalAlpha = 0.9
+        ctx.beginPath(); ctx.arc(px, py, C * 0.40, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1
+        ctx.fillStyle = `rgb(${mixWhite(c[0], 0.65)},${mixWhite(c[1], 0.65)},${mixWhite(c[2], 0.65)})`
+        ctx.beginPath(); ctx.arc(px, py, Math.max(1, C * 0.16), 0, Math.PI * 2); ctx.fill()
+      })
     }
-    ctx.globalAlpha = 1
 
-    // 3. clipping — saturated cores read white where a faction crowds itself
-    for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x++) {
-        const f = cells[y * W + x]
-        if (!f) continue
-        let n = 0
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue
-            const xx = x + dx, yy = y + dy
-            if (xx >= 0 && xx < W && yy >= 0 && yy < H && cells[yy * W + xx] === f) n++
-          }
-        if (n < 4) continue
-        const [r, g, b] = LUT[f]!
-        const w = 0.72
-        ctx.fillStyle = `rgb(${Math.round(r + (255 - r) * w)},${Math.round(g + (255 - g) * w)},${Math.round(b + (255 - b) * w)})`
-        ctx.globalAlpha = f === RADICALS ? 0.3 : 0.55
-        ctx.beginPath()
-        ctx.arc(x * cell + cell / 2, y * cell + cell / 2, cell * 0.3, 0, Math.PI * 2)
-        ctx.fill()
-      }
-    ctx.globalAlpha = 1
+    // bloom over cells (fluoro / crt)
+    if (LOOK !== 'eyepiece') drawBloom(LOOK === 'crt' ? 0.45 : 0.55)
 
-    // placement bloom — a weighty flash where a card just dropped (part of the signal)
+    // placement flash (part of the signal)
     if (flashRef.current) {
-      const age = Math.min(1, (performance.now() - flashRef.current.t0) / 320)
-      const k = 1 - age
+      const age = Math.min(1, (performance.now() - flashRef.current.t0) / 320), k = 1 - age
+      ctx.globalCompositeOperation = 'lighter'
       for (const [cx, cy] of flashRef.current.cells) {
-        const px = cx * cell + cell / 2, py = cy * cell + cell / 2, rr = cell * (0.5 + age * 1.3)
-        const bloom = ctx.createRadialGradient(px, py, 0, px, py, rr)
-        bloom.addColorStop(0, `rgba(255,255,255,${0.7 * k})`)
-        bloom.addColorStop(1, 'rgba(255,255,255,0)')
-        ctx.fillStyle = bloom
-        ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI * 2); ctx.fill()
+        const [px, py] = at(cx, cy), r2 = C * (0.5 + age * 1.3)
+        const g = ctx.createRadialGradient(px, py, 0, px, py, r2)
+        g.addColorStop(0, `rgba(255,255,255,${0.7 * k})`); g.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r2, 0, Math.PI * 2); ctx.fill()
       }
+      ctx.globalCompositeOperation = 'source-over'
     }
-    ctx.globalCompositeOperation = 'source-over'
 
-    // 4. shot noise — signal-tracking grain, tiled + cycled
-    const tile = opt.noise[(performance.now() / 90 | 0) % 3]
-    const pat = ctx.createPattern(tile, 'repeat')!
-    ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.13; ctx.fillStyle = pat; ctx.fillRect(0, 0, boardW, boardH)
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.035; ctx.fillRect(0, 0, boardW, boardH)
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
-
-    // 5. hot pixels
-    ctx.globalCompositeOperation = 'lighter'
-    for (const [fx, fy, a] of opt.hot) {
-      ctx.globalAlpha = a; ctx.fillStyle = '#dff3ff'
-      ctx.fillRect(Math.round(fx * boardW), Math.round(fy * boardH), 1, 1)
+    // ── POST-FX (per look) ────────────────────────────────────────────────────
+    const grain = ctx.createPattern(opt.noise, 'repeat')!
+    if (LOOK === 'crt') {
+      // aperture-grille vertical triad
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 1
+      for (let x = 0; x < boardW; x += 3) {
+        ctx.fillStyle = 'rgba(255,70,70,0.05)'; ctx.fillRect(x, 0, 1, boardH)
+        ctx.fillStyle = 'rgba(70,255,120,0.05)'; ctx.fillRect(x + 1, 0, 1, boardH)
+        ctx.fillStyle = 'rgba(120,120,255,0.05)'; ctx.fillRect(x + 2, 0, 1, boardH)
+      }
+      ctx.globalCompositeOperation = 'source-over'
+      // hard period-2 scanlines
+      ctx.fillStyle = 'rgba(0,0,0,0.28)'
+      for (let y = 0; y < boardH; y += 2) ctx.fillRect(0, y, boardW, 1)
+      ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.05; ctx.fillStyle = grain; ctx.fillRect(0, 0, boardW, boardH)
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
+    } else {
+      // subtle scanlines
+      if (C >= 7) { ctx.fillStyle = LOOK === 'eyepiece' ? 'rgba(0,0,0,0.10)' : 'rgba(0,0,0,0.16)'; for (let y = 0; y < boardH; y += 3) ctx.fillRect(0, y, boardW, 1) }
+      ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = LOOK === 'eyepiece' ? 0.06 : 0.05; ctx.fillStyle = grain; ctx.fillRect(0, 0, boardW, boardH)
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
+      // hot pixels
+      ctx.globalCompositeOperation = 'lighter'
+      for (const [fx, fy, a] of opt.hot) { ctx.globalAlpha = a; ctx.fillStyle = '#dff3ff'; ctx.fillRect(Math.round(fx * boardW), Math.round(fy * boardH), 1, 1) }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
     }
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
 
-    // 6. vignette
-    const vig = ctx.createRadialGradient(boardW / 2, boardH / 2, boardH * 0.35, boardW / 2, boardH / 2, boardW * 0.62)
-    vig.addColorStop(0, 'rgba(2,4,10,0)')
-    vig.addColorStop(1, 'rgba(2,4,10,0.46)')
-    ctx.fillStyle = vig
-    ctx.fillRect(0, 0, boardW, boardH)
+    // ── VIGNETTE / FIELD STOP ─────────────────────────────────────────────────
+    if (LOOK === 'eyepiece') {
+      // round eyepiece FOV biting the corners into brass shadow
+      const cxp = boardW / 2, cyp = boardH / 2, Rap = 0.94 * Math.hypot(boardW, boardH) / 2
+      const fov = ctx.createRadialGradient(cxp, cyp, Rap - C * 3, cxp, cyp, Rap + C * 2)
+      fov.addColorStop(0, 'rgba(2,4,10,0)'); fov.addColorStop(0.7, 'rgba(2,4,10,0.7)'); fov.addColorStop(1, 'rgba(2,4,10,1)')
+      ctx.fillStyle = fov; ctx.fillRect(0, 0, boardW, boardH)
+    } else {
+      const vig = ctx.createRadialGradient(boardW / 2, boardH / 2, boardH * 0.35, boardW / 2, boardH / 2, boardW * 0.62)
+      vig.addColorStop(0, 'rgba(2,4,10,0)')
+      vig.addColorStop(1, LOOK === 'crt' ? 'rgba(1,4,2,0.6)' : 'rgba(2,4,10,0.46)')
+      ctx.fillStyle = vig; ctx.fillRect(0, 0, boardW, boardH)
+    }
 
-    // 8. graticule (reticle) — after the field, before the crisp overlay
-    if (cell >= 6) graticule(ctx, boardW, boardH, cell)
+    // graticule reticle (crt draws its own grid in the field)
+    if (cell >= 6 && LOOK !== 'crt') graticule(ctx, boardW, boardH, cell)
 
-    // 9. foresight / projection — LAST, UNBLURRED (plan drawn on the glass)
+    // ── foresight / projection — LAST, UNBLURRED (plan drawn on the glass) ────
     const ring = (idx: number, color: string, wide = false, dash = false) => {
       const x = (idx % W) * cell + cell / 2
       const y = ((idx / W) | 0) * cell + cell / 2

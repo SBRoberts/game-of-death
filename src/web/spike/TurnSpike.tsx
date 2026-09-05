@@ -35,6 +35,17 @@ const mixWhite = (v: number, t: number) => Math.round(v + (255 - v) * t)
 const mixBlack = (v: number, t: number) => Math.round(v * (1 - t))
 const rgb = (c: [number, number, number]) => `rgb(${c[0]},${c[1]},${c[2]})`
 
+// ── Life-event animation (design language: "living culture on a lab CRT") ────
+// Per-cell transition kinds detected by diffing the pre/post generation boards.
+const EV_SURV = 0, EV_BORN = 1, EV_DIE_NAT = 2, EV_DIE_COMBAT = 3, EV_CONVERT = 4
+const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t)
+// The five shared curves — one motion vocabulary across every event.
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3        // entrance / confident decel
+const easeOutBack = (t: number) => { const s = 1.6; const u = t - 1; return 1 + (s + 1) * u ** 3 + s * u ** 2 } // settle overshoot
+const easeInQuad = (t: number) => t * t                      // natural-death collapse
+const easeOutQuint = (t: number) => 1 - (1 - t) ** 5         // fast-attack, long tail
+const REDUCED = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
 /** Eyepiece reticle ticked into the board's inner edge (HANDOFF §4.3). */
 function graticule(ctx: CanvasRenderingContext2D, boardW: number, boardH: number, cell: number) {
   const off = 7
@@ -94,6 +105,14 @@ export function TurnSpike() {
   const flashRef = useRef<{ cells: Array<[number, number]>; t0: number } | null>(null)
   const snapRef = useRef({ you: 0, kills: 0, conv: 0 })
   const lastingRef = useRef<number[]>([])
+  const genRafRef = useRef<number>(0)
+  // Life-event animation state — reused typed arrays, filled once per committed
+  // generation (never per frame). `active` gates the interpolated render.
+  const animRef = useRef({
+    active: false, genStart: 0, D: 1,
+    prev: new Uint8Array(W * H), kind: new Uint8Array(W * H), cause: new Uint8Array(W * H),
+    delay: new Float32Array(W * H), cx: 0, cy: 0,
+  })
   // Optics buffers — allocated once per board size, reused every frame.
   const opticsRef = useRef<{
     key: string
@@ -152,6 +171,41 @@ export function TurnSpike() {
   useEffect(() => {
     if (phase === 'deploy' && sel === null) setSel(firstAffordable())
   }, [phase, turn, sel, firstAffordable])
+
+  // Diff the pre/post-tick boards into per-cell life-events. Combat vs natural
+  // is a render-side heuristic (an enemy prev-neighbour) so the sim stays pure.
+  const diffGen = useCallback(() => {
+    const a = animRef.current, cells = duelRef.current.state.cells
+    const { prev, kind, cause, delay } = a
+    let sx = 0, sy = 0, n = 0
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, A = prev[i], B = cells[i]
+        if (A === B) { kind[i] = EV_SURV; cause[i] = 0; continue }
+        if (A === 0) { kind[i] = EV_BORN; cause[i] = B; continue }
+        if (B === 0) {
+          let e1 = 0, e2 = 0, e3 = 0
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              if (!dx && !dy) continue
+              const xx = x + dx, yy = y + dy
+              if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue
+              const nf = prev[yy * W + xx]
+              if (nf > 0 && nf !== A) { if (nf === PLAYER) e1++; else if (nf === RIVAL) e2++; else e3++ }
+            }
+          if (e1 + e2 + e3 > 0) { kind[i] = EV_DIE_COMBAT; cause[i] = e1 >= e2 && e1 >= e3 ? PLAYER : e2 >= e3 ? RIVAL : RADICALS; sx += x; sy += y; n++ }
+          else { kind[i] = EV_DIE_NAT; cause[i] = A }
+          continue
+        }
+        kind[i] = EV_CONVERT; cause[i] = B; sx += x; sy += y; n++ // A>0,B>0,A!=B
+      }
+    a.cx = n ? sx / n : W / 2; a.cy = n ? sy / n : H / 2
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x
+        delay[i] = kind[i] === EV_SURV ? 0 : Math.min(0.15, Math.max(Math.abs(x - a.cx), Math.abs(y - a.cy)) * 0.02)
+      }
+  }, [])
 
   useEffect(() => {
     const d = duelRef.current
@@ -213,6 +267,23 @@ export function TurnSpike() {
     const at = (x: number, y: number) => [x * C + C / 2, y * C + C / 2] as const
     const forEachLive = (fn: (x: number, y: number, f: number) => void) => {
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const f = cells[y * W + x]; if (f) fn(x, y, f) }
+    }
+    // life-event animation clock for this frame
+    const anim = animRef.current
+    const animOn = anim.active && phase === 'resolve'
+    const p = animOn ? clamp01((performance.now() - anim.genStart) / anim.D) : 1
+    const sub = (i: number, a: number, b: number) => (animOn ? clamp01((p - a - anim.delay[i]) / (b - a)) : 1)
+    const PI2 = Math.PI * 2
+    // one fluorescent cell (disc + brighter membrane + hot nucleus), scaled + faded
+    const fluoroBody = (px: number, py: number, c: [number, number, number], scale: number, alpha: number) => {
+      const rD = C * 0.4 * scale
+      ctx.globalAlpha = 0.88 * alpha; ctx.fillStyle = rgb(c); ctx.beginPath(); ctx.arc(px, py, rD, 0, PI2); ctx.fill()
+      ctx.globalAlpha = 0.9 * alpha; ctx.lineWidth = Math.max(1, C * 0.12 * scale)
+      ctx.strokeStyle = `rgb(${Math.min(255, c[0] + 80)},${Math.min(255, c[1] + 80)},${Math.min(255, c[2] + 80)})`
+      ctx.beginPath(); ctx.arc(px, py, rD, 0, PI2); ctx.stroke()
+      ctx.globalAlpha = alpha; ctx.fillStyle = `rgb(${mixWhite(c[0], 0.65)},${mixWhite(c[1], 0.65)},${mixWhite(c[2], 0.65)})`
+      ctx.beginPath(); ctx.arc(px, py, Math.max(1, C * 0.16 * scale), 0, PI2); ctx.fill()
+      ctx.globalAlpha = 1
     }
 
     // ── FIELD ───────────────────────────────────────────────────────────────
@@ -297,19 +368,91 @@ export function TurnSpike() {
         ctx.fillStyle = `rgb(${mixWhite(c[0], 0.9)},${mixWhite(c[1], 0.9)},${mixWhite(c[2], 0.9)})`
         ctx.beginPath(); ctx.arc(px, py, C * 0.17, 0, Math.PI * 2); ctx.fill()
       })
-    } else { // fluoro — cytoplasm disc + brighter membrane + hot nucleus
+    } else { // fluoro — animation-aware: survivors hold, changers move
+      // DYING cells, drawn UNDER the living so regrowth overgrows the corpse
+      if (animOn) {
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const i = y * W + x, k = anim.kind[i], A = anim.prev[i]
+            if (!A || (k !== EV_DIE_NAT && k !== EV_DIE_COMBAT)) continue
+            const c = LUT[A]!, [px, py] = at(x, y)
+            if (k === EV_DIE_NAT) { // starve: quiet accelerating collapse, no ring
+              const u = sub(i, 0.05, 0.45), s = 1 - 0.85 * easeInQuad(u)
+              const pale: [number, number, number] = [mixBlack(c[0], 0.3 * u), mixBlack(c[1], 0.3 * u), mixBlack(c[2], 0.3 * u)]
+              fluoroBody(px, py, pale, s, 1 - u)
+            } else { // lyse: flinch (swell) then burst
+              const u = sub(i, 0.12, 0.45), s = u < 0.15 ? 1 + 1.7 * u : 1.25 * (1 - easeOutQuint((u - 0.15) / 0.85))
+              fluoroBody(px, py, c, Math.max(0.02, s), 1 - easeOutQuint(u))
+            }
+          }
+      }
+      // LIVING cells (survivors + born + converted-to)
       forEachLive((x, y, f) => {
-        const c = LUT[f]!, [px, py] = at(x, y)
-        ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.88)`; ctx.beginPath(); ctx.arc(px, py, C * 0.40, 0, Math.PI * 2); ctx.fill()
-        ctx.strokeStyle = `rgb(${Math.min(255, c[0] + 80)},${Math.min(255, c[1] + 80)},${Math.min(255, c[2] + 80)})`; ctx.lineWidth = Math.max(1, C * 0.12); ctx.globalAlpha = 0.9
-        ctx.beginPath(); ctx.arc(px, py, C * 0.40, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1
-        ctx.fillStyle = `rgb(${mixWhite(c[0], 0.65)},${mixWhite(c[1], 0.65)},${mixWhite(c[2], 0.65)})`
-        ctx.beginPath(); ctx.arc(px, py, Math.max(1, C * 0.16), 0, Math.PI * 2); ctx.fill()
+        const i = y * W + x, [px, py] = at(x, y), k = animOn ? anim.kind[i] : EV_SURV
+        if (k === EV_BORN) { const u = easeOutCubic(sub(i, 0.20, 0.50)); fluoroBody(px, py, LUT[f]!, 0.35 + 0.65 * u, 0.4 + 0.6 * u) }
+        else if (k === EV_CONVERT) { // hard A→B switch at the midpoint, small settle
+          const u = sub(i, 0.15, 0.45), before = u < 0.5, face = before ? (anim.prev[i] || f) : f
+          fluoroBody(px, py, LUT[face]!, before ? 1 : 0.9 + 0.1 * easeOutCubic((u - 0.5) / 0.5), 1)
+        } else fluoroBody(px, py, LUT[f]!, 1, 1)
       })
     }
 
     // bloom over cells (fluoro / crt)
     if (LOOK !== 'eyepiece') drawBloom(LOOK === 'crt' ? 0.45 : 0.55)
+
+    // ── LIFE-EVENT TRANSIENTS (additive; cause leads effect) ──────────────────
+    if (animOn) {
+      ctx.globalCompositeOperation = 'lighter'
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x, k = anim.kind[i]
+          if (k === EV_SURV) continue
+          const [px, py] = at(i % W, (i / W) | 0)
+          if (k === EV_BORN) {
+            const u = sub(i, 0.20, 0.70)
+            // nucleus ignition pop
+            if (u > 0 && u < 1) {
+              const pu = u < 0.4 ? u / 0.4 : 1 - (u - 0.4) / 0.6, c = LUT[cells[i]]!
+              ctx.globalAlpha = 0.9 * clamp01(pu); ctx.fillStyle = `rgb(${mixWhite(c[0], 0.9)},${mixWhite(c[1], 0.9)},${mixWhite(c[2], 0.9)})`
+              ctx.beginPath(); ctx.arc(px, py, C * 0.14 * easeOutBack(clamp01(u * 1.4)), 0, PI2); ctx.fill()
+            }
+            // cytokinesis bridge to nearest same-faction parent (snaps at u≈0.8)
+            if (u < 0.8) {
+              const f = cells[i]
+              let bx = 0, by = 0, found = false
+              for (let dy = -1; dy <= 1 && !found; dy++) for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue; const xx = (i % W) + dx, yy = ((i / W) | 0) + dy
+                if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue
+                if (anim.prev[yy * W + xx] === f) { bx = xx; by = yy; found = true; break }
+              }
+              if (found) {
+                const [sx, syy] = at(bx, by), c = LUT[f]!
+                ctx.globalAlpha = 0.6 * (1 - u / 0.8); ctx.strokeStyle = `rgb(${mixWhite(c[0], 0.6)},${mixWhite(c[1], 0.6)},${mixWhite(c[2], 0.6)})`; ctx.lineWidth = 1
+                ctx.beginPath(); ctx.moveTo(sx, syy); ctx.lineTo(px, py); ctx.stroke()
+              }
+            }
+          } else if (k === EV_DIE_COMBAT) {
+            const ag = LUT[anim.cause[i]] || [255, 240, 214]
+            // strike chord from the aggressor's side, first
+            const su = sub(i, 0.0, 0.12)
+            if (su < 1) {
+              const ang = Math.atan2(py - anim.cy * C - C / 2, px - anim.cx * C - C / 2)
+              ctx.globalAlpha = 0.85 * (1 - su); ctx.strokeStyle = rgb(ag as [number, number, number]); ctx.lineWidth = 1.25
+              ctx.beginPath(); ctx.moveTo(px - Math.cos(ang) * C * 1.6 * (1 - su), py - Math.sin(ang) * C * 1.6 * (1 - su)); ctx.lineTo(px, py); ctx.stroke()
+            }
+            // aggressor-hued lyse ring blooming outward — the attribution beat
+            const ru = sub(i, 0.15, 0.95)
+            if (ru > 0 && ru < 1 && C >= 8) {
+              ctx.globalAlpha = 0.8 * (1 - ru); ctx.strokeStyle = `rgb(${mixWhite(ag[0], 0.3)},${mixWhite(ag[1], 0.3)},${mixWhite(ag[2], 0.3)})`
+              ctx.lineWidth = 1.5 * (1 - ru) + 0.3; ctx.beginPath(); ctx.arc(px, py, C * (0.4 + 1.2 * easeOutCubic(ru)), 0, PI2); ctx.stroke()
+            }
+          } else if (k === EV_CONVERT) {
+            const fu = sub(i, 0.08, 0.30)
+            if (fu < 1) { ctx.globalAlpha = 0.9 * (1 - fu); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px, py, C * 0.3, 0, PI2); ctx.fill() }
+          }
+        }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
+    }
 
     // placement flash (part of the signal)
     if (flashRef.current) {
@@ -446,7 +589,11 @@ export function TurnSpike() {
       let g = 0
       let prevRival = d.state.pops[RIVAL]
       let tagUntil = -1
-      const stepOnce = () => {
+      // Generation clock: each tick's transition plays over D ms (the reel's own
+      // ritardando/hit-stop gap becomes the animation window — zero added latency).
+      const step = () => {
+        const a = animRef.current
+        a.prev.set(d.state.cells) // pre-tick board
         d.tick()
         g++
         let freeze = 0
@@ -458,17 +605,25 @@ export function TurnSpike() {
         if (d.state.pops[RIVAL] > prevRival + 2) { setRivalTag(true); tagUntil = g + 2 }
         if (g >= tagUntil && rivalTag) setRivalTag(false)
         prevRival = d.state.pops[RIVAL]
-        redraw()
-        if (g >= RESOLVE_GENS || d.status !== 'running') {
-          setRivalTag(false)
-          timerRef.current = window.setTimeout(finishReel, 320) // let the final board land before the payoff
-          return
-        }
+        diffGen()
         const t = g / RESOLVE_GENS
         const decel = t > 0.66 ? ((t - 0.66) / 0.34) ** 2 * 165 : 0 // ritardando into the landing
-        timerRef.current = window.setTimeout(stepOnce, 52 + decel + freeze)
+        const D = REDUCED ? 0 : Math.min(340, Math.max(110, 52 + decel + freeze))
+        a.genStart = performance.now(); a.D = Math.max(1, D); a.active = !REDUCED && D > 0
+        const done = () => {
+          a.active = false; redraw()
+          if (g >= RESOLVE_GENS || d.status !== 'running') { setRivalTag(false); timerRef.current = window.setTimeout(finishReel, 320); return }
+          timerRef.current = window.setTimeout(step, 0)
+        }
+        if (!a.active) { redraw(); done(); return }
+        const frame = () => {
+          redraw()
+          if (performance.now() - a.genStart >= a.D) done()
+          else genRafRef.current = requestAnimationFrame(frame)
+        }
+        genRafRef.current = requestAnimationFrame(frame)
       }
-      timerRef.current = window.setTimeout(stepOnce, 90)
+      timerRef.current = window.setTimeout(step, 90)
     }, 400)
   }
 
@@ -506,7 +661,7 @@ export function TurnSpike() {
     setPhase('deploy')
   }
 
-  const clearTimers = () => { window.clearTimeout(timerRef.current); window.clearTimeout(windRef.current); window.clearTimeout(settleRef.current); cancelAnimationFrame(rafRef.current) }
+  const clearTimers = () => { window.clearTimeout(timerRef.current); window.clearTimeout(windRef.current); window.clearTimeout(settleRef.current); cancelAnimationFrame(rafRef.current); cancelAnimationFrame(genRafRef.current); animRef.current.active = false }
   useEffect(() => clearTimers, [])
 
   useEffect(() => {

@@ -23,8 +23,36 @@ const TURNS = 8
 const RESOLVE_GENS = 16 // one fixed resolution window (difficulty-for-reward lives in meta stakes, not here)
 const PREVIEW = RESOLVE_GENS // the ghost previews exactly what resolves — WYSIWYG
 const COLOR = ['#05070c', '#42f59b', '#ff5340', '#7f96ff']
-const GLOW = ['rgba(0,0,0,0)', 'rgba(66,245,155,0.55)', 'rgba(255,83,64,0.55)', 'rgba(127,150,255,0.5)']
-const CORE = [0, 0.92, 0.92, 0.52]
+// Confocal LUT (per HANDOFF §4.0): each faction is a grayscale channel pseudo-
+// coloured and SUMMED additively, so where green sits in red's PSF the sum warms
+// toward gold — contested ground announces itself with no UI element.
+const LUT: Array<[number, number, number] | null> = [null, [66, 245, 155], [255, 83, 64], [127, 150, 255]]
+const CH_CORE_ALPHA = [0, 1, 1, 0.72] // radicals read dimmer
+// PSF, in buffer-px (buffer is 2px/cell, upscaled → the rest of the PSF for free)
+const WING_BLUR = 3.4
+const CORE_BLUR = 0.85
+const WING_ALPHA = 0.26
+
+/** Eyepiece reticle ticked into the board's inner edge (HANDOFF §4.3). */
+function graticule(ctx: CanvasRenderingContext2D, boardW: number, boardH: number, cell: number) {
+  const off = 7
+  ctx.strokeStyle = 'rgba(195,207,224,0.20)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  for (let x = 8; x < W; x += 8) {
+    const len = x % 32 === 0 ? 7 : 3.5
+    const px = Math.round(x * cell) + 0.5
+    ctx.moveTo(px, off); ctx.lineTo(px, off + len)
+    ctx.moveTo(px, boardH - off); ctx.lineTo(px, boardH - off - len)
+  }
+  for (let y = 8; y < H; y += 8) {
+    const len = y % 32 === 0 ? 7 : 3.5
+    const py = Math.round(y * cell) + 0.5
+    ctx.moveTo(off, py); ctx.lineTo(off + len, py)
+    ctx.moveTo(boardW - off, py); ctx.lineTo(boardW - off - len, py)
+  }
+  ctx.stroke()
+}
 const TIER_SIZE = [26, 34, 46, 58, 70]
 const TIER_COLOR = ['#ffd84a', '#ff9a3a', '#ff6a2a', '#ff4530', '#fff0e0']
 const GRADE_COLOR: Record<string, string> = { A: '#42f59b', B: '#8affc4', C: '#e8c463', D: '#8391a8' }
@@ -64,6 +92,11 @@ export function TurnSpike() {
   const flashRef = useRef<{ cells: Array<[number, number]>; t0: number } | null>(null)
   const snapRef = useRef({ you: 0, kills: 0, conv: 0 })
   const lastingRef = useRef<number[]>([])
+  // Optics buffers — allocated once, reused every frame (HANDOFF §10).
+  const opticsRef = useRef<{
+    src: HTMLCanvasElement; blur: HTMLCanvasElement
+    noise: HTMLCanvasElement[]; hot: Array<[number, number, number]>
+  } | null>(null)
 
   const [cell, setCell] = useState(fitCell())
   const [phase, setPhase] = useState<Phase>('deploy')
@@ -129,7 +162,33 @@ export function TurnSpike() {
     setProj({ cells, valid, impact })
   }, [phase, sel, rot, turn, hover])
 
-  // ── render ──────────────────────────────────────────────────────────────
+  const buildOptics = useCallback(() => {
+    if (opticsRef.current) return opticsRef.current
+    const mk = (w: number, h: number) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c }
+    const src = mk(W * 2, H * 2)
+    const blur = mk(W * 2, H * 2)
+    // three pre-baked shot-noise tiles (Poisson-ish film grain, cycled)
+    const noise = [0, 1, 2].map(() => {
+      const c = mk(128, 128)
+      const nc = c.getContext('2d')!
+      const img = nc.createImageData(128, 128)
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = 128 + (Math.random() - 0.5) * 2 * 34
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = v
+        img.data[i + 3] = 255
+      }
+      nc.putImageData(img, 0, 0)
+      return c
+    })
+    // 11 seeded fixed hot pixels (fraction x, fraction y, alpha)
+    let s = 0x2f6e2b1
+    const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+    const hot: Array<[number, number, number]> = Array.from({ length: 11 }, () => [rnd(), rnd(), 0.4 + rnd() * 0.4])
+    opticsRef.current = { src, blur, noise, hot }
+    return opticsRef.current
+  }, [])
+
+  // ── render — the confocal optics pipeline (HANDOFF §4.0) ─────────────────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -140,56 +199,115 @@ export function TurnSpike() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const d = duelRef.current
     const cells = d.state.cells
+    const opt = buildOptics()
+    const bw = W * 2, bh = H * 2
 
-    const bg = ctx.createRadialGradient(boardW / 2, boardH * 0.42, 0, boardW / 2, boardH * 0.42, boardW * 0.7)
-    bg.addColorStop(0, '#0a0e18')
-    bg.addColorStop(1, '#04060a')
-    ctx.fillStyle = bg
+    // 1. background + faint linear illumination gradient
+    ctx.fillStyle = '#05070d'
+    ctx.fillRect(0, 0, boardW, boardH)
+    const illum = ctx.createLinearGradient(0, 0, boardW, boardH)
+    illum.addColorStop(0, 'rgba(30,44,66,0.16)')
+    illum.addColorStop(0.5, 'rgba(22,32,50,0.06)')
+    illum.addColorStop(1, 'rgba(30,44,66,0.14)')
+    ctx.fillStyle = illum
     ctx.fillRect(0, 0, boardW, boardH)
 
+    // reach zone (illuminated substrate; drawn under the signal so puncta glow over it)
     if (phase === 'deploy' && sel !== null) {
-      ctx.fillStyle = 'rgba(66,245,155,0.09)'
+      ctx.fillStyle = 'rgba(66,245,155,0.08)'
       const mask = reachRef.current
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++)
           if (mask[y * W + x] && cells[y * W + x] === 0) ctx.fillRect(x * cell, y * cell, cell, cell)
     }
 
-    ctx.globalCompositeOperation = 'lighter'
+    // 2. per channel (radicals → rival → player): PSF wings then core, additive
+    const sctx = opt.src.getContext('2d')!
+    const bctx = opt.blur.getContext('2d')!
+    ctx.imageSmoothingEnabled = true
+    for (const f of [RADICALS, RIVAL, PLAYER]) {
+      const [r, g, b] = LUT[f]!
+      sctx.clearRect(0, 0, bw, bh)
+      sctx.fillStyle = `rgb(${r},${g},${b})`
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++)
+          if (cells[y * W + x] === f) sctx.fillRect(x * 2, y * 2, 2, 2)
+      ctx.globalCompositeOperation = 'lighter'
+      // wings
+      bctx.clearRect(0, 0, bw, bh); bctx.filter = `blur(${WING_BLUR}px)`; bctx.drawImage(opt.src, 0, 0); bctx.filter = 'none'
+      ctx.globalAlpha = WING_ALPHA
+      ctx.drawImage(opt.blur, 0, 0, boardW, boardH)
+      // core
+      bctx.clearRect(0, 0, bw, bh); bctx.filter = `blur(${CORE_BLUR}px)`; bctx.drawImage(opt.src, 0, 0); bctx.filter = 'none'
+      ctx.globalAlpha = CH_CORE_ALPHA[f]
+      ctx.drawImage(opt.blur, 0, 0, boardW, boardH)
+    }
+    ctx.globalAlpha = 1
+
+    // 3. clipping — saturated cores read white where a faction crowds itself
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const f = cells[y * W + x]
         if (!f) continue
-        const cx = x * cell + cell / 2
-        const cy = y * cell + cell / 2
-        const r = cell * 0.6
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
-        g.addColorStop(0, `rgba(255,255,255,${CORE[f]})`)
-        g.addColorStop(0.38, GLOW[f])
-        g.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx.fillStyle = g
+        let n = 0
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            const xx = x + dx, yy = y + dy
+            if (xx >= 0 && xx < W && yy >= 0 && yy < H && cells[yy * W + xx] === f) n++
+          }
+        if (n < 4) continue
+        const [r, g, b] = LUT[f]!
+        const w = 0.72
+        ctx.fillStyle = `rgb(${Math.round(r + (255 - r) * w)},${Math.round(g + (255 - g) * w)},${Math.round(b + (255 - b) * w)})`
+        ctx.globalAlpha = f === RADICALS ? 0.3 : 0.55
         ctx.beginPath()
-        ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.arc(x * cell + cell / 2, y * cell + cell / 2, cell * 0.3, 0, Math.PI * 2)
         ctx.fill()
       }
-    // placement bloom — a weighty flash where a card just dropped
+    ctx.globalAlpha = 1
+
+    // placement bloom — a weighty flash where a card just dropped (part of the signal)
     if (flashRef.current) {
       const age = Math.min(1, (performance.now() - flashRef.current.t0) / 320)
       const k = 1 - age
       for (const [cx, cy] of flashRef.current.cells) {
-        const px = cx * cell + cell / 2
-        const py = cy * cell + cell / 2
-        const g = ctx.createRadialGradient(px, py, 0, px, py, cell * (0.5 + age * 1.3))
-        g.addColorStop(0, `rgba(255,255,255,${0.7 * k})`)
-        g.addColorStop(1, 'rgba(255,255,255,0)')
-        ctx.fillStyle = g
-        ctx.beginPath()
-        ctx.arc(px, py, cell * (0.5 + age * 1.3), 0, Math.PI * 2)
-        ctx.fill()
+        const px = cx * cell + cell / 2, py = cy * cell + cell / 2, rr = cell * (0.5 + age * 1.3)
+        const bloom = ctx.createRadialGradient(px, py, 0, px, py, rr)
+        bloom.addColorStop(0, `rgba(255,255,255,${0.7 * k})`)
+        bloom.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = bloom
+        ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI * 2); ctx.fill()
       }
     }
     ctx.globalCompositeOperation = 'source-over'
 
+    // 4. shot noise — signal-tracking grain, tiled + cycled
+    const tile = opt.noise[(performance.now() / 90 | 0) % 3]
+    const pat = ctx.createPattern(tile, 'repeat')!
+    ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.13; ctx.fillStyle = pat; ctx.fillRect(0, 0, boardW, boardH)
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.035; ctx.fillRect(0, 0, boardW, boardH)
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
+
+    // 5. hot pixels
+    ctx.globalCompositeOperation = 'lighter'
+    for (const [fx, fy, a] of opt.hot) {
+      ctx.globalAlpha = a; ctx.fillStyle = '#dff3ff'
+      ctx.fillRect(Math.round(fx * boardW), Math.round(fy * boardH), 1, 1)
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'
+
+    // 6. vignette
+    const vig = ctx.createRadialGradient(boardW / 2, boardH / 2, boardH * 0.35, boardW / 2, boardH / 2, boardW * 0.62)
+    vig.addColorStop(0, 'rgba(2,4,10,0)')
+    vig.addColorStop(1, 'rgba(2,4,10,0.46)')
+    ctx.fillStyle = vig
+    ctx.fillRect(0, 0, boardW, boardH)
+
+    // 8. graticule (reticle) — after the field, before the crisp overlay
+    if (cell >= 6) graticule(ctx, boardW, boardH, cell)
+
+    // 9. foresight / projection — LAST, UNBLURRED (plan drawn on the glass)
     const ring = (idx: number, color: string, wide = false, dash = false) => {
       const x = (idx % W) * cell + cell / 2
       const y = ((idx / W) | 0) * cell + cell / 2

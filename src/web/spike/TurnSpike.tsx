@@ -427,7 +427,7 @@ export function TurnSpike() {
               }
               if (found) {
                 const [sx, syy] = at(bx, by), c = LUT[f]!
-                ctx.globalAlpha = 0.6 * (1 - u / 0.8); ctx.strokeStyle = `rgb(${mixWhite(c[0], 0.6)},${mixWhite(c[1], 0.6)},${mixWhite(c[2], 0.6)})`; ctx.lineWidth = 1
+                ctx.globalAlpha = 0.42 * (1 - u / 0.8); ctx.strokeStyle = `rgb(${mixWhite(c[0], 0.6)},${mixWhite(c[1], 0.6)},${mixWhite(c[2], 0.6)})`; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(sx, syy); ctx.lineTo(px, py); ctx.stroke()
               }
             }
@@ -437,14 +437,14 @@ export function TurnSpike() {
             const su = sub(i, 0.0, 0.12)
             if (su < 1) {
               const ang = Math.atan2(py - anim.cy * C - C / 2, px - anim.cx * C - C / 2)
-              ctx.globalAlpha = 0.85 * (1 - su); ctx.strokeStyle = rgb(ag as [number, number, number]); ctx.lineWidth = 1.25
+              ctx.globalAlpha = 0.95 * (1 - su); ctx.strokeStyle = rgb(ag as [number, number, number]); ctx.lineWidth = 1.5
               ctx.beginPath(); ctx.moveTo(px - Math.cos(ang) * C * 1.6 * (1 - su), py - Math.sin(ang) * C * 1.6 * (1 - su)); ctx.lineTo(px, py); ctx.stroke()
             }
-            // aggressor-hued lyse ring blooming outward — the attribution beat
+            // aggressor-hued lyse ring blooming outward — THE attribution beat (bold + saturated)
             const ru = sub(i, 0.15, 0.95)
             if (ru > 0 && ru < 1 && C >= 8) {
-              ctx.globalAlpha = 0.8 * (1 - ru); ctx.strokeStyle = `rgb(${mixWhite(ag[0], 0.3)},${mixWhite(ag[1], 0.3)},${mixWhite(ag[2], 0.3)})`
-              ctx.lineWidth = 1.5 * (1 - ru) + 0.3; ctx.beginPath(); ctx.arc(px, py, C * (0.4 + 1.2 * easeOutCubic(ru)), 0, PI2); ctx.stroke()
+              ctx.globalAlpha = 0.9 * (1 - ru); ctx.strokeStyle = `rgb(${mixWhite(ag[0], 0.15)},${mixWhite(ag[1], 0.15)},${mixWhite(ag[2], 0.15)})`
+              ctx.lineWidth = 2 * (1 - ru) + 0.5; ctx.beginPath(); ctx.arc(px, py, C * (0.4 + 1.0 * easeOutCubic(ru)), 0, PI2); ctx.stroke()
             }
           } else if (k === EV_CONVERT) {
             const fu = sub(i, 0.08, 0.30)

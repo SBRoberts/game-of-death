@@ -410,7 +410,9 @@ export function App() {
       {
         aiSamples: r.aiSamples + b.aiSamplesAdd,
         aiActEvery: Math.max(6, Math.round(r.aiActEvery * b.aiActEveryMul)),
-        ringGrace: Math.round(TUNING.ringGrace * b.ringGraceMul),
+        // Per-round bleach schedule, tightened further by the difficulty (BSL).
+        ringGrace: Math.round(r.bleachGrace * b.ringGraceMul),
+        ringShrinkEvery: r.bleachEvery,
       },
       [], // no equipped start-power — power is earned in-run
       r.rivalLoadout,

@@ -369,12 +369,11 @@ function drawBloom(ctx: CanvasRenderingContext2D, cells: Uint8Array, w: number, 
   bctx.putImageData(bloomImage, 0, 0)
   ctx.save()
   ctx.imageSmoothingEnabled = true
-  // Two upscale passes: a wide dim halo and a tighter hot one. A hit-stop
-  // punch lifts both so an impact frame flares brighter; warp raises the whole
-  // slide's fluorescence as the specimen strays from Conway.
-  ctx.globalAlpha = 0.22 + 0.28 * punch + 0.16 * warpAmt
-  ctx.drawImage(bloomCanvas, -CELL, -CELL, (w + 2) * CELL, (h + 2) * CELL)
-  ctx.globalAlpha = 0.4 + 0.4 * punch + 0.22 * warpAmt
+  // Core-only bloom: ONE tight upscale, no wide neighbour-bleeding halo pass —
+  // so cells stay crisp and countable (the fix for the "chlorinated pool" look).
+  // A hit-stop punch lifts it on impact frames; warp raises the whole slide's
+  // fluorescence as the specimen strays from Conway.
+  ctx.globalAlpha = 0.32 + 0.34 * punch + 0.2 * warpAmt
   ctx.drawImage(bloomCanvas, 0, 0, w * CELL, h * CELL)
   ctx.restore()
 }
@@ -399,29 +398,50 @@ function grainPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
   return grain
 }
 
-/** One filled path of circles per faction — puncta, not pixels. */
-function drawPuncta(
+/** Crisp fluorescent cells: cytoplasm disc + brighter membrane + hot nucleus,
+ *  with a hard dark gutter so a block reads as four dots. Two batched paths per
+ *  faction (body/membrane, then nuclei) — no per-cell state churn. */
+function drawCellsFluoro(
   ctx: CanvasRenderingContext2D,
-  s: { cells: Uint8Array; types: Uint8Array },
+  s: { cells: Uint8Array },
   w: number,
-  faction: number,
-  color: string,
-  alpha: number,
 ): void {
-  ctx.fillStyle = color
-  ctx.globalAlpha = alpha
-  ctx.beginPath()
-  const r = CELL / 2 - 0.5
-  for (let i = 0; i < s.cells.length; i++) {
-    if (s.cells[i] !== faction) continue
-    const cx = (i % w) * CELL + CELL / 2
-    const cy = Math.floor(i / w) * CELL + CELL / 2
-    ctx.moveTo(cx + r, cy)
-    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  const rD = CELL * 0.42
+  const rN = Math.max(1, CELL * 0.16)
+  const order: Array<[number, number]> = [[RADICALS, 0.85], [RIVAL, 1], [PLAYER, 1]]
+  for (const [f, a] of order) {
+    const c = BLOOM_RGB[f] ?? BLOOM_RGB[RADICALS]
+    // body disc + brighter membrane (one path, filled then stroked)
+    ctx.beginPath()
+    for (let i = 0; i < s.cells.length; i++) {
+      if (s.cells[i] !== f) continue
+      const cx = (i % w) * CELL + CELL / 2
+      const cy = Math.floor(i / w) * CELL + CELL / 2
+      ctx.moveTo(cx + rD, cy)
+      ctx.arc(cx, cy, rD, 0, Math.PI * 2)
+    }
+    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${0.9 * a})`
+    ctx.fill()
+    if (CELL >= 6) {
+      ctx.lineWidth = Math.max(1, CELL * 0.12)
+      ctx.strokeStyle = `rgba(${Math.min(255, c[0] + 80)},${Math.min(255, c[1] + 80)},${Math.min(255, c[2] + 80)},${0.85 * a})`
+      ctx.stroke()
+    }
+    // hot nucleus
+    ctx.beginPath()
+    for (let i = 0; i < s.cells.length; i++) {
+      if (s.cells[i] !== f) continue
+      const cx = (i % w) * CELL + CELL / 2
+      const cy = Math.floor(i / w) * CELL + CELL / 2
+      ctx.moveTo(cx + rN, cy)
+      ctx.arc(cx, cy, rN, 0, Math.PI * 2)
+    }
+    ctx.fillStyle = `rgba(${mixToWhite(c[0], 0.65)},${mixToWhite(c[1], 0.65)},${mixToWhite(c[2], 0.65)},${a})`
+    ctx.fill()
   }
-  ctx.fill()
   ctx.globalAlpha = 1
 }
+const mixToWhite = (v: number, t: number) => Math.round(v + (255 - v) * t)
 
 // ── the momentum frame ─────────────────────────────────────────────────────
 // The board's border IS the territory gauge: your green grows outward from
@@ -623,9 +643,7 @@ export function render(
     }
   }
 
-  drawPuncta(ctx, s, w, RADICALS, COLORS.radicals, 0.8)
-  drawPuncta(ctx, s, w, RIVAL, COLORS.rival, 1)
-  drawPuncta(ctx, s, w, PLAYER, COLORS.player, 1)
+  drawCellsFluoro(ctx, s, w)
 
   // Special-cell nuclei — and the martyr's visible tripwire.
   for (let i = 0; i < s.types.length; i++) {

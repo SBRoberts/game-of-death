@@ -19,6 +19,8 @@ interface ShopProps {
   bought: Set<string>
   nextRoundLabel: string
   round: number
+  /** True when the round you're about to begin is the final boss. */
+  nextBoss?: boolean
   onBuy: (item: ShopItem) => void
   onReroll: () => void
   onContinue: () => void
@@ -36,6 +38,7 @@ export function Shop({
   bought,
   nextRoundLabel,
   round,
+  nextBoss,
   onBuy,
   onReroll,
   onContinue,
@@ -101,8 +104,8 @@ export function Shop({
             <span className="num">◈ {rerollCost}</span>
           )}
         </button>
-        <button className="shop-continue" onClick={onContinue}>
-          BEGIN ROUND {round} · {nextRoundLabel} →
+        <button className={`shop-continue ${nextBoss ? 'boss' : ''}`} onClick={onContinue}>
+          {nextBoss ? <>⚠ FINAL SPECIMEN · {nextRoundLabel} →</> : <>BEGIN ROUND {round} · {nextRoundLabel} →</>}
         </button>
       </div>
     </div>

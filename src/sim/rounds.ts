@@ -38,8 +38,8 @@ export const ROUNDS: readonly RoundDef[] = [
   { label: 'the swarm', rivalLoadout: ['highlife'], rivalSeed: 'soup', aiSamples: 9, aiActEvery: 14, warpCap: 5, bleachGrace: 40, bleachEvery: 8 },
   // 4 — immortal, draining blood; a moderate mid-round bleach.
   { label: 'elder blood', rivalLoadout: ['elder', { key: 'vampire', level: 2 }], rivalSeed: 'soup', aiSamples: 10, aiActEvery: 13, warpCap: 7, bleachGrace: 64, bleachEvery: 12 },
-  // 5 — an explosive bloom under an early, slow, creeping bleach.
-  { label: 'the bloom', rivalLoadout: ['highlife', 'martyr'], rivalSeed: 'acorn', aiSamples: 11, aiActEvery: 12, warpCap: 9, bleachGrace: 32, bleachEvery: 14 },
-  // 6 — THE PROGENITOR: an endless glider gun, immortal, draining, mined.
-  { label: 'the progenitor', rivalLoadout: ['elder', { key: 'vampire', level: 3 }, 'martyr'], rivalSeed: 'glidergun', aiSamples: 12, aiActEvery: 10, warpCap: 12, bleachGrace: 48, bleachEvery: 10, boss: true },
+  // 5 — a relentless, hardy bloom that drains, under an early slow bleach.
+  { label: 'the bloom', rivalLoadout: ['highlife', { key: 'vampire', level: 2 }, 'hardy'], rivalSeed: 'soup', aiSamples: 11, aiActEvery: 11, warpCap: 9, bleachGrace: 32, bleachEvery: 14 },
+  // 6 — THE PROGENITOR: immortal, hardy, draining, and mined — a wall.
+  { label: 'the progenitor', rivalLoadout: ['elder', { key: 'vampire', level: 3 }, 'martyr', 'hardy'], rivalSeed: 'soup', aiSamples: 13, aiActEvery: 8, warpCap: 12, bleachGrace: 48, bleachEvery: 10, boss: true },
 ]

@@ -1207,7 +1207,9 @@ export function App() {
     ? hud.status !== 'won'
       ? `${hud.outcome.toLowerCase().replace(/\.$/, '')} · reached round ${round} of ${ROUNDS.length}`
       : round < ROUNDS.length
-        ? `${hud.outcome.toLowerCase().replace(/\.$/, '')} · next, ${ROUNDS[round].label}`
+        ? ROUNDS[round].boss
+          ? `${hud.outcome.toLowerCase().replace(/\.$/, '')} · next: the final specimen — ${ROUNDS[round].label}`
+          : `${hud.outcome.toLowerCase().replace(/\.$/, '')} · next, ${ROUNDS[round].label}`
         : `${hud.outcome.toLowerCase().replace(/\.$/, '')} · a full gauntlet, survived`
     : ''
 
@@ -1297,6 +1299,7 @@ export function App() {
         bought={shopBought}
         nextRoundLabel={ROUNDS[round]?.label ?? ''}
         round={round + 1}
+        nextBoss={ROUNDS[round]?.boss ?? false}
         onBuy={buyItem}
         onReroll={rerollShop}
         onContinue={() => {
@@ -1440,9 +1443,9 @@ export function App() {
           <div className="round-line">
             <RoundPips round={round} cleared={over && hud.status === 'won'} />
             <span className="rn">
-              ROUND {round}/{ROUNDS.length}
+              {ROUNDS[round - 1].boss ? 'FINAL' : `ROUND ${round}/${ROUNDS.length}`}
             </span>
-            <span className="rlabel">{ROUNDS[round - 1].label}</span>
+            <span className={`rlabel ${ROUNDS[round - 1].boss ? 'boss' : ''}`}>{ROUNDS[round - 1].label}</span>
           </div>
           <StormTrack hud={hud} grace={duel.t.ringGrace} maxInset={duel.maxInset} />
           <WarpMeter warp={hud?.warp ?? 0} cap={ROUNDS[round - 1].warpCap} />
@@ -1547,12 +1550,12 @@ export function App() {
       </div>
       <div style={{ flex: 1 }} />
       <div className="round-line">
-        <span className="lbl-sm">ROUND</span>
+        <span className="lbl-sm">{ROUNDS[round - 1].boss ? 'FINAL' : 'ROUND'}</span>
         <RoundPips round={round} cleared={over && hud.status === 'won'} />
         <span className="rn">
           {round}/{ROUNDS.length}
         </span>
-        <span className="rlabel">{over && hud.status === 'won' ? 'cleared' : ROUNDS[round - 1].label}</span>
+        <span className={`rlabel ${ROUNDS[round - 1].boss ? 'boss' : ''}`}>{over && hud.status === 'won' ? 'cleared' : ROUNDS[round - 1].label}</span>
       </div>
     </div>
   )

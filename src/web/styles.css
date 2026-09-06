@@ -754,6 +754,16 @@ canvas {
   font-size: 12px;
   color: var(--dim);
 }
+.round-line .rlabel.boss {
+  color: var(--rival);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(255, 83, 64, 0.5);
+}
+.round-line .rn {
+  color: var(--text);
+}
 
 .isl-tc .storm-group {
   width: 100%;
@@ -3395,6 +3405,15 @@ canvas {
 .shop-continue:hover {
   transform: translateY(-2px);
   box-shadow: 0 0 34px rgba(66, 245, 155, 0.5);
+}
+.shop-continue.boss {
+  color: #1a0605;
+  background: linear-gradient(180deg, #ff9a86, #ff5340);
+  border-color: rgba(255, 150, 130, 0.7);
+  box-shadow: 0 0 24px rgba(255, 83, 64, 0.4);
+}
+.shop-continue.boss:hover {
+  box-shadow: 0 0 38px rgba(255, 83, 64, 0.6);
 }
 
 @media (max-width: 760px) {

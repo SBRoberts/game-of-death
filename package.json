@@ -14,7 +14,8 @@
     "balance": "tsx src/harness/genebalance.ts",
     "draftbalance": "tsx src/harness/draftbalance.ts",
     "turnbalance": "tsx src/harness/turnbalance.ts",
-    "classify": "tsx src/harness/classify.ts"
+    "classify": "tsx src/harness/classify.ts",
+    "gauntlet": "tsx src/harness/gauntlet.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

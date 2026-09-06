@@ -10,6 +10,7 @@ import {
   impactScore,
   patternById,
   projectImpact,
+  rotate,
   rotateDir,
   type Impact,
 } from '../sim'
@@ -315,6 +316,65 @@ function IncubateControl({
       >
         {phase === 'incubate' ? 'INCUBATING…' : <>INCUBATE <span className="ib-key">SPACE</span></>}
       </button>
+    </div>
+  )
+}
+
+const ROLE_COLOR: Record<string, string> = {
+  hold: '#9db2d0', grow: 'var(--you)', strike: 'var(--rival)', guard: '#6ea8ff', bomb: 'var(--gold)',
+}
+
+/** The armed-card readout: with a card selected the bulky hand tray hides so the
+ *  slide is clear to aim on, and THIS shows the card's detail + aim hints instead
+ *  (the tray's own blurb would render off the bottom of the screen). */
+function ArmedCard({
+  duel,
+  selected,
+  rotation,
+  onSelect,
+  onCancel,
+}: {
+  duel: Duel
+  selected: number
+  rotation: number
+  onSelect: (i: number) => void
+  onCancel: () => void
+}) {
+  const p = duel.patternFor(PLAYER, duel.hand[selected])
+  const cells = rotate(p.cells, rotation)
+  const w = Math.max(...cells.map(([x]) => x)) + 1
+  const h = Math.max(...cells.map(([, y]) => y)) + 1
+  const size = Math.max(w, h, 4)
+  const roleColor = ROLE_COLOR[p.role] ?? 'var(--dim)'
+  return (
+    <div className="armed-card" role="status" aria-label={`aiming ${p.name}: ${p.tip}`}>
+      <div className="armed-tile" aria-hidden="true">
+        <svg viewBox={`0 0 ${size} ${size}`}>
+          {cells.map(([x, y]) => (
+            <circle key={`${x},${y}`} cx={x + (size - w) / 2 + 0.45} cy={y + (size - h) / 2 + 0.45} r={0.44} fill={COLORS.player} />
+          ))}
+        </svg>
+      </div>
+      <div className="armed-body">
+        <div className="armed-head">
+          <span className="armed-name" style={{ color: roleColor }}>{p.name}</span>
+          <span className="armed-role" style={{ color: roleColor }}>{p.role}</span>
+          <span className="armed-cost num">⬢ {p.cost}</span>
+        </div>
+        <div className="armed-tip">{p.tip}</div>
+      </div>
+      <div className="armed-switch" role="group" aria-label="switch card">
+        {duel.hand.map((_, i) => (
+          <button key={i} className={`armed-chip ${i === selected ? 'on' : ''}`} onClick={() => onSelect(i)} aria-label={`card ${['Q', 'W', 'E'][i]}`}>
+            {['Q', 'W', 'E'][i]}
+          </button>
+        ))}
+      </div>
+      <div className="armed-hints">
+        <span>click a lit cell</span>
+        {p.dir !== undefined && <span><kbd>R</kbd> rotate</span>}
+        <button className="armed-cancel" onClick={onCancel}><kbd>Esc</kbd> cancel</button>
+      </div>
     </div>
   )
 }
@@ -1492,21 +1552,26 @@ export function App() {
           )}
         </div>
 
-        <div className={`island isl-bc ${selected !== null ? 'retracted' : ''}`}>
-          <Hand
-            duel={duel}
-            biomass={hud?.biomass ?? 0}
-            selected={selected}
-            rotation={rotation}
-            onSelect={selectCard}
-            onRerollCard={rerollCard}
-            onRerollHand={rerollHand}
-            variant="float"
-          />
-          {coachStep > 0 && !over && (
-            <CoachStep n={1} title="PICK A CARD" state={coachStep === 1 ? 'active' : 'pending'} className="coach-1">
-              Press <b>Q</b>, <b>W</b> or <b>E</b> — or click one. Time is already held.
-            </CoachStep>
+        <div className={`island isl-bc ${selected !== null ? 'armed' : ''}`}>
+          {selected !== null && !over ? (
+            <ArmedCard
+              duel={duel}
+              selected={selected}
+              rotation={rotation}
+              onSelect={selectCard}
+              onCancel={() => setSelected(null)}
+            />
+          ) : (
+            <Hand
+              duel={duel}
+              biomass={hud?.biomass ?? 0}
+              selected={selected}
+              rotation={rotation}
+              onSelect={selectCard}
+              onRerollCard={rerollCard}
+              onRerollHand={rerollHand}
+              variant="float"
+            />
           )}
         </div>
 

@@ -136,10 +136,13 @@ function computeLayout(w: number, h: number): Layout {
   const aspect = w / h
   if (aspect < 1.0) return { mount: 'portrait', cell: 8, railW: 0, cssW: 0, cssH: 0 }
   let mount: Mount
-  // Float ("tray") covers the common desktop range — 16:10 (1.6) AND 16:9
-  // (1.78). Only true ultrawides (> 2.0) dock to the rail, where the wings
-  // would otherwise go to waste; narrow/tall goes to the bottom dock.
-  if (aspect > 2.0 || w < 1024) mount = 'rail'
+  // Float ("tray") overlays the HUD on the board's corners — the most
+  // space-efficient layout, and the only one that fits a phone in landscape
+  // (a reserved rail/dock overflows a small screen). So every small screen
+  // floats; only roomy desktops split off a rail (ultrawide) or bottom dock
+  // (squat), where the reserved band has room to live.
+  if (w < 1024) mount = 'float'
+  else if (aspect > 2.0) mount = 'rail'
   else if (aspect < 1.4) mount = 'bottom'
   else mount = 'float'
   const railW = mount === 'rail' ? (w < 900 ? 148 : 264) : 0

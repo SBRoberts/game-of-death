@@ -3868,3 +3868,180 @@ canvas {
     transition: none !important;
   }
 }
+
+/* ═══ Mobile / small-screen float HUD ═══════════════════════════════════════
+   Below 1024px the whole viewport uses the float overlay (see computeLayout).
+   The desktop islands are sized for a wide board; on a phone board the six
+   floating corners collide and clip. Compact them into a clean top strip +
+   bottom strip that fit a landscape phone without overlap. */
+@media (max-width: 1023px) {
+  .mount-float .island {
+    z-index: 3;
+    border-radius: 7px;
+  }
+
+  /* Top-left — biomass only; drop the specimen/seed line + divider. */
+  .mount-float .isl-tl {
+    top: 8px;
+    left: 8px;
+  }
+  .mount-float .isl-tl .specimen-body {
+    padding: 5px 10px;
+    gap: 0;
+  }
+  .mount-float .isl-tl .kv:first-of-type,
+  .mount-float .isl-tl .vdiv,
+  .mount-float .isl-tl .mark {
+    display: none;
+  }
+
+  /* Top-center — pips + round number only; no min-width, label, or storm. */
+  .mount-float .isl-tc {
+    top: 8px;
+    min-width: 0;
+    padding: 5px 10px;
+    gap: 4px;
+  }
+  .mount-float .isl-tc .rlabel,
+  .mount-float .isl-tc .storm-group,
+  .mount-float .isl-tc .storm-track {
+    display: none;
+  }
+  .mount-float .isl-tc .warp-track {
+    min-width: 44px;
+  }
+
+  /* Top-right — tighten spacing. */
+  .mount-float .isl-tr {
+    top: 8px;
+    right: 8px;
+    gap: 8px;
+    padding: 5px 8px;
+  }
+
+  /* Bottom-left — compact incubate (still the primary action; keep it clear). */
+  .mount-float .isl-bl {
+    bottom: 8px;
+    left: 8px;
+    padding: 6px 7px;
+  }
+  .mount-float .incubate-well {
+    min-width: 0;
+    gap: 5px;
+  }
+  /* The "TURN" word + "n/8" count widen the well past the button; the pip row
+     already reads as the turn tracker, so drop the label + count on mobile. */
+  .mount-float .incubate-well .turn-line .lbl-xs,
+  .mount-float .incubate-well .turn-count {
+    display: none;
+  }
+  .mount-float .incubate-well .turn-pips {
+    justify-content: center;
+    gap: 4px;
+  }
+  .mount-float .incubate-btn {
+    padding: 8px 11px;
+    font-size: 12px;
+    gap: 6px;
+  }
+  .mount-float .incubate-btn .ib-key {
+    display: none; /* touch users tap the button; the SPACE hint just adds width */
+  }
+
+  /* Bottom-center — the hand becomes a band BETWEEN the incubate button (left)
+     and the tickers (right) instead of centering over them, so nothing collides.
+     Contents stay centered within that band. */
+  .mount-float .isl-bc {
+    bottom: 8px;
+    left: 124px;
+    right: 104px;
+    transform: none;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+  }
+  .mount-float .isl-bc.armed {
+    left: 124px;
+    right: 104px;
+  }
+  /* Keyboard hotkey caps are dead weight on touch and crowd the narrow cards. */
+  .mount-float .card .keycap.card-key {
+    display: none;
+  }
+  /* Armed readout stays a slim bar on mobile — the wrapping tip would grow it
+     tall and bury the board you're trying to tap. Name + role + chips suffice. */
+  .mount-float .armed-card {
+    gap: 10px;
+    padding: 4px 6px;
+  }
+  .mount-float .armed-tip {
+    display: none;
+  }
+  .mount-float .armed-tile {
+    width: 34px;
+    height: 34px;
+  }
+  .mount-float .card.float-card {
+    width: 104px;
+    gap: 4px;
+    padding: 6px;
+  }
+  .mount-float .float-card .head {
+    gap: 6px;
+  }
+  .mount-float .float-card .head .tile {
+    width: 26px;
+    height: 26px;
+  }
+  .mount-float .float-card .head .tile svg {
+    width: 20px;
+    height: 20px;
+  }
+  .mount-float .card .name {
+    font-size: 12px;
+  }
+  .mount-float .card .blurb {
+    display: none;
+  }
+  /* Stack the reroll controls into a narrow column beside the cards. */
+  .mount-float .isl-bc .reroll-bar {
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 0;
+  }
+  .mount-float .isl-bc .reroll {
+    padding: 5px 7px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  /* Bottom-right — compact tickers. */
+  .mount-float .isl-br {
+    bottom: 8px;
+    right: 8px;
+    padding: 5px 8px;
+    gap: 1px;
+  }
+}
+
+/* Between-round modals (shop, chest, cash-out, genome, settings) can be taller
+   than a short landscape phone. Unbounded, they centre and clip both the header
+   and the continue button off-screen with no way to scroll. Cap the height and
+   let the panel scroll internally so everything stays reachable. */
+@media (max-width: 1023px) {
+  .shop,
+  .chest,
+  .cashout,
+  .genome,
+  .settings {
+    max-height: 92vh;
+    max-height: 92dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Tighten the shop item grid on small screens so more fits per scroll. */
+  .shop {
+    padding: 16px 16px 14px;
+    gap: 10px;
+  }
+}

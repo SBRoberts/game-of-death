@@ -202,6 +202,9 @@ function RoundPips({ round, cleared }: { round: number; cleared: boolean }) {
 
 function StormTrack({ hud, grace, maxInset }: { hud: Hud | null; grace: number; maxInset: number }) {
   const active = (hud?.inset ?? 0) > 0
+  // Turn-based rounds are short — the storm never approaches. Only surface the
+  // track once it's actually imminent or biting, so it isn't dead HUD noise.
+  if (!active && (hud?.stormEta ?? grace) > grace * 0.5) return null
   const frac = hud
     ? active
       ? Math.min(1, hud.inset / maxInset)
@@ -783,7 +786,9 @@ export function App() {
           phaseRef.current = 'deploy'; setTurnPhase('deploy'); setSelected(null)
           if (turnRef.current >= TURNS_PER_ROUND) {
             const p = duel.state.pops[PLAYER], r = duel.state.pops[RIVAL]
-            duel.forceEnd(p > r ? 'won' : 'lost')
+            // Territory decides; a dead-even board breaks on kills (not the house).
+            const win = p !== r ? p > r : duel.state.combatDeaths[RIVAL] > duel.state.combatDeaths[PLAYER]
+            duel.forceEnd(win ? 'won' : 'lost')
           } else { turnRef.current += 1; setTurnNum(turnRef.current) }
         }
       } else {

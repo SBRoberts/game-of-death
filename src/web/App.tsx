@@ -1006,7 +1006,17 @@ export function App() {
           // window — classifying one with the other's ladder would promise a
           // tier that can't be honored. The honest "−N rival" stands on its own;
           // the chain is the emergent payoff you discover as it banks.
-          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival · ${radicalsTouched} radicals`
+          // Own cells the move would smother — the honest downside, shown only
+          // when it actually costs you something so a clean placement stays terse.
+          const selfCost = impact.ownLost.length > 0 ? ` · −${impact.ownLost.length} yours` : ''
+          hintText = `+${impact.gained.length} you${settle} · −${rivalHit} rival${selfCost} · ${radicalsTouched} radicals`
+          if (debug)
+            (window as unknown as { __impact?: unknown }).__impact = {
+              gained: impact.gained.length,
+              destroyed: rivalHit,
+              ownLost: impact.ownLost.length,
+              text: hintText,
+            }
         }
       }
 

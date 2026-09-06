@@ -26,6 +26,10 @@ export function impactScore(
   let score = -cost * 0.4
   for (const i of impact.destroyed) score += cells[i] === target ? 3 : 0.5
   score += impact.gained.length * 0.4
+  // Own cells this placement smothers are a real cost — value them a shade
+  // above a gain so the planner won't crowd its own frontier to death. A
+  // deliberate sacrifice (martyr, vampire) still wins on its enemy kills.
+  score -= impact.ownLost.length * 0.5
   return score
 }
 

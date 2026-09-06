@@ -907,6 +907,22 @@ export function render(
     for (const i of impact.destroyed) {
       ctx.fillRect((i % w) * CELL + 2, Math.floor(i / w) * CELL + 2, CELL - 5, CELL - 5)
     }
+    // Your OWN cells this placement would smother — the honest downside, drawn
+    // as an amber caution cross over the doomed cell so you see the trade.
+    if (impact.ownLost.length) {
+      ctx.strokeStyle = 'rgba(255,196,84,0.8)'
+      ctx.lineWidth = 1.4
+      ctx.beginPath()
+      for (const i of impact.ownLost) {
+        const x = (i % w) * CELL
+        const y = Math.floor(i / w) * CELL
+        ctx.moveTo(x + 2.5, y + 2.5)
+        ctx.lineTo(x + CELL - 2.5, y + CELL - 2.5)
+        ctx.moveTo(x + CELL - 2.5, y + 2.5)
+        ctx.lineTo(x + 2.5, y + CELL - 2.5)
+      }
+      ctx.stroke()
+    }
   }
 
   // Placement ghost + heading.

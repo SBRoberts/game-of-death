@@ -19,6 +19,9 @@ export interface Impact {
    * This is the "will it form a stable nucleus?" answer.
    */
   lasting: number[]
+  /** Your OWN cells this placement costs — alive in the do-nothing future,
+   *  dead with the placement (self-overpopulation). The honest downside. */
+  ownLost: number[]
 }
 
 export function projectImpact(
@@ -43,10 +46,12 @@ export function projectImpact(
   }
   const gained: number[] = []
   const destroyed: number[] = []
+  const ownLost: number[] = []
   for (let i = 0; i < base.cells.length; i++) {
     const a = base.cells[i]
     const b = alt.cells[i]
     if (b === faction && a !== faction) gained.push(i)
+    else if (a === faction && b !== faction) ownLost.push(i) // your cell, killed by your own move
     else if (a !== 0 && a !== faction && b !== a) destroyed.push(i)
   }
 
@@ -58,5 +63,5 @@ export function projectImpact(
   }
   const lasting = gained.filter((i) => alt.cells[i] === faction)
 
-  return { gained, destroyed, lasting }
+  return { gained, destroyed, lasting, ownLost }
 }

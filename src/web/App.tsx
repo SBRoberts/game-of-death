@@ -67,6 +67,12 @@ const PLACE_SOUND: Record<string, SfxName> = {
 }
 
 const SPEEDS = TUNING.speeds
+// Turn-based duel (the locked gameplay model — see docs/design/adr-turn-based.md):
+// a round is TURNS_PER_ROUND turns of DEPLOY (paused) → INCUBATE (a fixed window
+// of generations) → repeat; the round ends by extinction or territory at the last turn.
+const TURNS_PER_ROUND = 8
+const INCUBATE_GENS = 16
+const INCUBATE_GPS = 14 // generations/sec during a resolve (~1.1s per turn)
 const SPEED_LABELS = ['⏸', '1×', '2×', '4×', '8×']
 const SPEED_KEYS = ['space', '1', '2', '3', '4']
 
@@ -275,6 +281,41 @@ function ThrottleWell({
   )
 }
 
+/** The turn instrument: a turn tracker + the commit button (replaces the throttle). */
+function IncubateControl({
+  turn,
+  phase,
+  disabled,
+  onIncubate,
+}: {
+  turn: number
+  phase: 'deploy' | 'incubate'
+  disabled: boolean
+  onIncubate: () => void
+}) {
+  return (
+    <div className="incubate-well">
+      <div className="turn-line">
+        <span className="lbl-xs">TURN</span>
+        <span className="turn-pips" aria-label={`turn ${turn} of ${TURNS_PER_ROUND}`}>
+          {Array.from({ length: TURNS_PER_ROUND }, (_, i) => (
+            <i key={i} className={i < turn ? 'done' : ''} />
+          ))}
+        </span>
+        <span className="turn-count num">{turn}/{TURNS_PER_ROUND}</span>
+      </div>
+      <button
+        className={`incubate-btn ${phase === 'incubate' ? 'running' : ''}`}
+        disabled={disabled || phase === 'incubate'}
+        onClick={onIncubate}
+        aria-label="incubate — run the culture forward one turn (space)"
+      >
+        {phase === 'incubate' ? 'INCUBATING…' : <>INCUBATE <span className="ib-key">␣</span></>}
+      </button>
+    </div>
+  )
+}
+
 function FilterSet({ scheme }: { scheme: PaletteMode }) {
   const s = SCHEMES[scheme]
   // A passive readout of the active dye pair — the gear beside it opens settings.
@@ -382,6 +423,12 @@ export function App() {
   duelRef.current = duel
 
   const [speedIdx, setSpeedIdx] = useState(1)
+  // Turn-based driver state (source of truth in refs; state mirrors drive the UI).
+  const [turnNum, setTurnNum] = useState(1)
+  const [turnPhase, setTurnPhase] = useState<'deploy' | 'incubate'>('deploy')
+  const turnRef = useRef(1)
+  const phaseRef = useRef<'deploy' | 'incubate'>('deploy')
+  const incTargetRef = useRef(0)
   const [selected, setSelected] = useState<number | null>(null)
   const [rotation, setRotation] = useState(0)
   const [hud, setHud] = useState<Hud | null>(null)
@@ -519,6 +566,24 @@ export function App() {
   const togglePause = useCallback(() => {
     setSpeedIdx((s) => (s === 0 ? lastSpeedRef.current : 0))
   }, [])
+
+  // Commit the turn: run one INCUBATE window. The loop advances the turn (or ends
+  // the round via forceEnd at the last turn), which fires the existing meta flow.
+  const incubate = useCallback(() => {
+    const d = duelRef.current
+    if (!d || d.status !== 'running' || phaseRef.current !== 'deploy') return
+    incTargetRef.current = d.state.gen + INCUBATE_GENS
+    phaseRef.current = 'incubate'
+    setTurnPhase('incubate')
+    setSelected(null)
+    sfx.play('release')
+  }, [])
+
+  // Reset the turn cursor whenever a fresh round's duel is created.
+  useEffect(() => {
+    turnRef.current = 1; setTurnNum(1)
+    phaseRef.current = 'deploy'; setTurnPhase('deploy')
+  }, [duel])
 
   const coarse = useMemo(() => window.matchMedia('(pointer: coarse)').matches, [])
 
@@ -670,13 +735,13 @@ export function App() {
       clockNow = now
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
-      const gps = SPEEDS[speedRef.current]
+      const incubating = phaseRef.current === 'incubate' && duel.status === 'running'
       const frozen = now < freezeUntil // hit-stop holds the sim on impact frames
       let ticked = false
-      if (duel.status === 'running' && gps > 0 && !frozen) {
-        acc += dt * gps
+      if (incubating && !frozen) {
+        acc += dt * INCUBATE_GPS
         let batch = 0
-        while (acc >= 1 && batch < 64) {
+        while (acc >= 1 && batch < 64 && duel.state.gen < incTargetRef.current) {
           duel.tick()
           acc -= 1
           batch++
@@ -712,7 +777,16 @@ export function App() {
             }
           }
         }
-      } else if (gps === 0 || duel.status !== 'running') {
+        // Turn complete: advance, or end the round at the last turn (fires the
+        // existing round-end meta via the status-change detection below).
+        if (duel.state.gen >= incTargetRef.current && duel.status === 'running') {
+          phaseRef.current = 'deploy'; setTurnPhase('deploy'); setSelected(null)
+          if (turnRef.current >= TURNS_PER_ROUND) {
+            const p = duel.state.pops[PLAYER], r = duel.state.pops[RIVAL]
+            duel.forceEnd(p > r ? 'won' : 'lost')
+          } else { turnRef.current += 1; setTurnNum(turnRef.current) }
+        }
+      } else {
         acc = 0
       }
 
@@ -911,7 +985,7 @@ export function App() {
           biomass: Math.floor(duel.biomass[PLAYER]),
           // While paused (speed 0) show the resting 1× rate, not +0.0/s — the
           // coach teaches "income accrues per generation" at exactly this moment.
-          rate: (duel.income(PLAYER) * SPEEDS[Math.max(1, speedRef.current)]).toFixed(1),
+          rate: (duel.income(PLAYER) * INCUBATE_GPS).toFixed(1),
           destroyed: sum.rivalDestroyed,
           captured: sum.radicalsClaimed + sum.rivalConverted,
           inset: s.ringInset,
@@ -973,7 +1047,7 @@ export function App() {
   }
 
   const placeAt = (x: number, y: number) => {
-    if (selected === null) return
+    if (selected === null || phaseRef.current !== 'deploy') return // deploy-phase only
     const id = duel.hand[selected]
     const placed = duel.playCard(selected, x, y, rotation)
     if (placed && id) {
@@ -1062,11 +1136,10 @@ export function App() {
       // (a stray 'n' in the shop would wipe the run; '1'–'4' would resume time).
       if ((chestOpen || shopOpen || showGenome || showSettings || showHowTo) && e.key !== 'Escape')
         return
-      if (e.key === ' ') {
+      if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault()
-        togglePause()
-      } else if (e.key >= '1' && e.key <= '4') setSpeedIdx(Number(e.key))
-      else if (e.key === 'r' || e.key === 'R') setRotation((r) => (r + 1) % 4)
+        incubate() // commit the turn
+      } else if (e.key === 'r' || e.key === 'R') setRotation((r) => (r + 1) % 4)
       else if (e.key === 'n' || e.key === 'N') requestNewRun()
       else if (e.key === 'q' || e.key === 'Q') selectCard(0)
       else if (e.key === 'w' || e.key === 'W') selectCard(1)
@@ -1085,7 +1158,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePause, requestNewRun, debug, duel, selectCard, openChest, chestOpen, shopOpen, showGenome, showSettings, showHowTo])
+  }, [incubate, requestNewRun, debug, duel, selectCard, openChest, chestOpen, shopOpen, showGenome, showSettings, showHowTo])
 
   // ── derived bits shared by the mounts ────────────────────────────────────
   const over = hud !== null && hud.status !== 'running'
@@ -1402,10 +1475,10 @@ export function App() {
         </div>
 
         <div className="island isl-bl">
-          <ThrottleWell speedIdx={speedIdx} onSet={setSpeedIdx} legends />
+          <IncubateControl turn={turnNum} phase={turnPhase} disabled={over} onIncubate={incubate} />
           {coachStep > 0 && !over && (
-            <CoachStep n={3} title="RELEASE TIME" state={coachStep === 3 ? 'active' : 'pending'} className="coach-3">
-              Income accrues per generation. Running hot is how you get rich.
+            <CoachStep n={3} title="INCUBATE" state={coachStep === 3 ? 'active' : 'pending'} className="coach-3">
+              Place your cards, then INCUBATE (space) to run the culture forward a turn.
             </CoachStep>
           )}
         </div>
@@ -1519,11 +1592,11 @@ export function App() {
         <div className="rail-group-label">
           <span className="lbl-sm">THROTTLE</span>
         </div>
-        <ThrottleWell speedIdx={speedIdx} onSet={setSpeedIdx} legends={!narrow} skipOne={narrow} />
+        <IncubateControl turn={turnNum} phase={turnPhase} disabled={over} onIncubate={incubate} />
         {coachStep > 0 && !over && (
           <div style={{ marginTop: 8 }}>
-            <CoachStep n={3} title="RELEASE TIME" state={coachStep === 3 ? 'active' : 'pending'}>
-              Income accrues per generation. Running hot is how you get rich.
+            <CoachStep n={3} title="INCUBATE" state={coachStep === 3 ? 'active' : 'pending'}>
+              Place your cards, then INCUBATE (space) to run the culture forward a turn.
             </CoachStep>
           </div>
         )}

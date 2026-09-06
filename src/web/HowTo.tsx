@@ -147,40 +147,27 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           <div className="howto-step">
             <span className="n">1</span>
             <div>
-              <b>Plan while paused.</b> Time holds still until you release it. Pick a pattern card
-              — a glider, an eater, a bomb — with <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd>.
+              <b>Pick a card.</b> <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> or click. Time is held while
+              you plan.
             </div>
           </div>
           <div className="howto-step">
             <span className="n">2</span>
             <div>
-              <b>Aim on the slide.</b> Place near your colony; a translucent preview — the ghost —
-              simulates 24 generations ahead and grades the spot. <kbd>R</kbd> rotates. Cells that
-              will settle glow solid.
+              <b>Aim on the slide.</b> The ghost previews where it lands and grades the spot.{' '}
+              <kbd>R</kbd> rotates.
             </div>
           </div>
           <div className="howto-step">
             <span className="n">3</span>
             <div>
-              <b>Release time.</b> <kbd>space</kbd> to run, <kbd>1</kbd>–<kbd>4</kbd> for speed. Feed
-              your colony so it grows, and turn Life's rules against the rival.
-            </div>
-          </div>
-          <div className="howto-step">
-            <span className="n">4</span>
-            <div>
-              <b>Win the board.</b> Its border is the territory gauge — your color from the left,
-              the rival's from the right. Drive them extinct before the entropy storm closes in.
+              <b>Incubate.</b> <kbd>space</kbd> runs the culture forward a turn. Outgrow the rival —
+              or drive them extinct.
             </div>
           </div>
         </div>
 
-        <div className="howto-divider">THE DUEL</div>
-
-        <p className="howto-lede">
-          Two colonies share one board, so Life's rules become weapons. Where fronts collide, three
-          things can happen — learn to force them and a single placement can turn a whole flank:
-        </p>
+        <div className="howto-divider">WHERE FRONTS COLLIDE</div>
 
         <div className="rules-grid rules-grid--duel">
           <div className="rule">
@@ -191,7 +178,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             />
             <div className="rule-text">
               <b>Recruitment</b>
-              <span>a newborn joins whichever faction surrounds it — push into contested ground and the births are yours</span>
+              <span>a newborn joins whoever surrounds it</span>
             </div>
           </div>
           <div className="rule">
@@ -202,7 +189,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             />
             <div className="rule-text">
               <b>Flanking</b>
-              <span>an enemy cell outnumbered by two or more defects to you — surround theirs to turn it against them</span>
+              <span>outnumber an enemy cell and it defects to you</span>
             </div>
           </div>
           <div className="rule">
@@ -213,17 +200,10 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             />
             <div className="rule-text">
               <b>Casualties</b>
-              <span>outnumbered by one yet flanked by an ally, a contested enemy dies — chain these for a rout</span>
+              <span>outnumbered and contested, it dies — chain for a rout</span>
             </div>
           </div>
         </div>
-
-        <p className="howto-note">
-          Clear three escalating rounds to survive the gauntlet. Each finished round pays{' '}
-          <span className="ash">ash</span> — spend it in the <b>genome</b> to <i>evolve</i>: rule
-          mutations, special cells, and bigger starting <b>seeds</b>. Every run is a fresh, seeded
-          universe.
-        </p>
         </div>
 
         <button className="title-btn primary howto-start" onClick={onStart}>

@@ -1452,8 +1452,6 @@ export function App() {
         </div>
 
         <div className="island isl-tr">
-          <FilterSet scheme={scheme} />
-          <div className="vdiv" />
           <button
             className="glyph-btn"
             aria-label="settings"

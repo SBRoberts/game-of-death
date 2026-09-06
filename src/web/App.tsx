@@ -72,7 +72,7 @@ const SPEEDS = TUNING.speeds
 // of generations) → repeat; the round ends by extinction or territory at the last turn.
 const TURNS_PER_ROUND = 8
 const INCUBATE_GENS = 16
-const INCUBATE_GPS = 14 // generations/sec during a resolve (~1.1s per turn)
+const GEN_DUR = 120 // ms per generation during a resolve — the life-event animation window
 const SPEED_LABELS = ['⏸', '1×', '2×', '4×', '8×']
 const SPEED_KEYS = ['space', '1', '2', '3', '4']
 
@@ -705,7 +705,7 @@ export function App() {
 
     let raf = 0
     let last = performance.now()
-    let acc = 0
+    let lastTick = last // generation clock: one tick per GEN_DUR (the anim window)
     let hudAt = 0
     let prevInset = duel.state.ringInset
     let prevStatus = duel.status
@@ -736,18 +736,16 @@ export function App() {
 
     const frame = (now: number) => {
       clockNow = now
-      const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const incubating = phaseRef.current === 'incubate' && duel.status === 'running'
       const frozen = now < freezeUntil // hit-stop holds the sim on impact frames
       let ticked = false
-      if (incubating && !frozen) {
-        acc += dt * INCUBATE_GPS
-        let batch = 0
-        while (acc >= 1 && batch < 64 && duel.state.gen < incTargetRef.current) {
+      // Generation clock: exactly one tick per GEN_DUR, so each transition has a
+      // window to animate over (render interpolates on fx.genT below).
+      if (incubating && !frozen && now - lastTick >= GEN_DUR) {
+        lastTick = now
+        {
           duel.tick()
-          acc -= 1
-          batch++
           ticked = true
           // Martyr detonations: ring, boom, kill count, a kick of the slide.
           for (const b of duel.state.blasts) {
@@ -791,8 +789,6 @@ export function App() {
             duel.forceEnd(win ? 'won' : 'lost')
           } else { turnRef.current += 1; setTurnNum(turnRef.current) }
         }
-      } else {
-        acc = 0
       }
 
       // Conversion sparks: any cell that changed hands this generation. During
@@ -978,6 +974,8 @@ export function App() {
         warp: duel.playerWarp,
         combo: cb.active && cb.total >= 5 ? { total: cb.total, tier: cb.tier, x: cb.cx, y: cb.cy } : null,
         banner,
+        genT: incubating && !frozen ? Math.min(1, (now - lastTick) / GEN_DUR) : 1,
+        anim: incubating && hs,
       })
       punchRef.current *= 0.82 // the impact spike decays quickly
 
@@ -990,7 +988,7 @@ export function App() {
           biomass: Math.floor(duel.biomass[PLAYER]),
           // While paused (speed 0) show the resting 1× rate, not +0.0/s — the
           // coach teaches "income accrues per generation" at exactly this moment.
-          rate: (duel.income(PLAYER) * INCUBATE_GPS).toFixed(1),
+          rate: (duel.income(PLAYER) * (1000 / GEN_DUR)).toFixed(1),
           destroyed: sum.rivalDestroyed,
           captured: sum.radicalsClaimed + sum.rivalConverted,
           inset: s.ringInset,

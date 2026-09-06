@@ -191,6 +191,10 @@ export interface FxState {
   combo: { total: number; tier: number; x: number; y: number } | null
   /** A banked-chain callout slamming in over the board. */
   banner: { text: string; sub: string; color: string; ttl: number; max: number } | null
+  /** Progress [0..1] through the current generation's transition (1 = settled). */
+  genT: number
+  /** True while a turn is resolving — enables per-cell life-event animation. */
+  anim: boolean
 }
 
 /** The five chain tiers' display colors (index = tier). */
@@ -443,6 +447,169 @@ function drawCellsFluoro(
 }
 const mixToWhite = (v: number, t: number) => Math.round(v + (255 - v) * t)
 
+// ── life-event animation (ported from the turn spike) ───────────────────────
+// Survivors hold, changers move; cause leads effect. Cells birth (divide),
+// die (starve vs lyse), and get claimed (attack) between generations.
+const EV_SURV = 0, EV_BORN = 1, EV_DIE_NAT = 2, EV_DIE_COMBAT = 3, EV_CONVERT = 4
+const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t)
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3
+const easeOutBack = (t: number) => { const s = 1.6; const u = t - 1; return 1 + (s + 1) * u ** 3 + s * u ** 2 }
+const easeInQuad = (t: number) => t * t
+const easeOutQuint = (t: number) => 1 - (1 - t) ** 5
+
+let evKind: Uint8Array | null = null
+let evCause: Uint8Array | null = null
+let evDelay: Float32Array | null = null
+let evPrev: Uint8Array | null = null // pre-tick board snapshot for this generation
+let evGen = -1
+let evCx = 0, evCy = 0
+
+/** Diff the pre/post-tick boards into per-cell life events. Once per generation. */
+function computeEvents(s: { cells: Uint8Array; prev: Uint8Array; gen: number }, w: number, h: number): void {
+  const n = w * h
+  if (!evKind || evKind.length !== n) {
+    evKind = new Uint8Array(n); evCause = new Uint8Array(n); evDelay = new Float32Array(n); evPrev = new Uint8Array(n)
+  }
+  const kind = evKind, cause = evCause!, delay = evDelay!
+  evPrev!.set(s.prev)
+  const prev = s.prev, cells = s.cells
+  let sx = 0, sy = 0, cnt = 0
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, A = prev[i], B = cells[i]
+      if (A === B) { kind[i] = EV_SURV; cause[i] = 0; continue }
+      if (A === 0) { kind[i] = EV_BORN; cause[i] = B; continue }
+      if (B === 0) {
+        let e1 = 0, e2 = 0, e3 = 0
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            const xx = x + dx, yy = y + dy
+            if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
+            const nf = prev[yy * w + xx]
+            if (nf > 0 && nf !== A) { if (nf === PLAYER) e1++; else if (nf === RIVAL) e2++; else e3++ }
+          }
+        if (e1 + e2 + e3 > 0) { kind[i] = EV_DIE_COMBAT; cause[i] = e1 >= e2 && e1 >= e3 ? PLAYER : e2 >= e3 ? RIVAL : RADICALS; sx += x; sy += y; cnt++ }
+        else { kind[i] = EV_DIE_NAT; cause[i] = A }
+        continue
+      }
+      kind[i] = EV_CONVERT; cause[i] = B; sx += x; sy += y; cnt++
+    }
+  evCx = cnt ? sx / cnt : w / 2
+  evCy = cnt ? sy / cnt : h / 2
+  for (let i = 0; i < n; i++) {
+    if (kind[i] === EV_SURV) { delay[i] = 0; continue }
+    const x = i % w, y = (i / w) | 0
+    delay[i] = Math.min(0.15, Math.max(Math.abs(x - evCx), Math.abs(y - evCy)) * 0.02)
+  }
+  evGen = s.gen
+}
+
+/** One fluorescent cell, scaled + faded (the animated draw is per-cell). */
+function fluoroBody(ctx: CanvasRenderingContext2D, px: number, py: number, c: readonly number[], scale: number, alpha: number): void {
+  const rD = CELL * 0.42 * scale
+  ctx.globalAlpha = 0.9 * alpha
+  ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`
+  ctx.beginPath(); ctx.arc(px, py, rD, 0, Math.PI * 2); ctx.fill()
+  if (CELL >= 6) {
+    ctx.globalAlpha = 0.85 * alpha
+    ctx.lineWidth = Math.max(1, CELL * 0.12 * scale)
+    ctx.strokeStyle = `rgb(${Math.min(255, c[0] + 80)},${Math.min(255, c[1] + 80)},${Math.min(255, c[2] + 80)})`
+    ctx.beginPath(); ctx.arc(px, py, rD, 0, Math.PI * 2); ctx.stroke()
+  }
+  ctx.globalAlpha = alpha
+  ctx.fillStyle = `rgb(${mixToWhite(c[0], 0.65)},${mixToWhite(c[1], 0.65)},${mixToWhite(c[2], 0.65)})`
+  ctx.beginPath(); ctx.arc(px, py, Math.max(1, CELL * 0.16 * scale), 0, Math.PI * 2); ctx.fill()
+  ctx.globalAlpha = 1
+}
+
+/** Draw cells mid-transition: dying under, then survivors/born/converted, then
+ *  additive transients (strike chords, aggressor-hued lyse rings, birth bridges). */
+function drawCellsAnimated(ctx: CanvasRenderingContext2D, s: { cells: Uint8Array }, w: number, h: number, p: number): void {
+  const kind = evKind!, cause = evCause!, delay = evDelay!, prevSnap = evPrev!, cells = s.cells
+  const sub = (i: number, a: number, b: number) => clamp01((p - a - delay[i]) / (b - a))
+  const at = (i: number) => [(i % w) * CELL + CELL / 2, ((i / w) | 0) * CELL + CELL / 2] as const
+  // DYING cells (under the living)
+  for (let i = 0; i < cells.length; i++) {
+    const k = kind[i], A = prevSnap[i]
+    if (!A || (k !== EV_DIE_NAT && k !== EV_DIE_COMBAT)) continue
+    const c = BLOOM_RGB[A] ?? BLOOM_RGB[RADICALS], [px, py] = at(i)
+    if (k === EV_DIE_NAT) {
+      const u = sub(i, 0.05, 0.45), sc = 1 - 0.85 * easeInQuad(u)
+      fluoroBody(ctx, px, py, [mixBlack(c[0], 0.3 * u), mixBlack(c[1], 0.3 * u), mixBlack(c[2], 0.3 * u)], sc, 1 - u)
+    } else {
+      const u = sub(i, 0.12, 0.45), sc = u < 0.15 ? 1 + 1.7 * u : 1.25 * (1 - easeOutQuint((u - 0.15) / 0.85))
+      fluoroBody(ctx, px, py, c, Math.max(0.02, sc), 1 - easeOutQuint(u))
+    }
+  }
+  // LIVING cells
+  for (let i = 0; i < cells.length; i++) {
+    const f = cells[i]
+    if (!f) continue
+    const k = kind[i], [px, py] = at(i)
+    if (k === EV_BORN) { const u = easeOutCubic(sub(i, 0.2, 0.5)); fluoroBody(ctx, px, py, BLOOM_RGB[f], 0.35 + 0.65 * u, 0.4 + 0.6 * u) }
+    else if (k === EV_CONVERT) {
+      const u = sub(i, 0.15, 0.45), before = u < 0.5, face = before ? (prevSnap[i] || f) : f
+      fluoroBody(ctx, px, py, BLOOM_RGB[face] ?? BLOOM_RGB[f], before ? 1 : 0.9 + 0.1 * easeOutCubic((u - 0.5) / 0.5), 1)
+    } else fluoroBody(ctx, px, py, BLOOM_RGB[f], 1, 1)
+  }
+  // TRANSIENTS (additive; cause leads effect)
+  ctx.globalCompositeOperation = 'lighter'
+  for (let i = 0; i < cells.length; i++) {
+    const k = kind[i]
+    if (k === EV_SURV) continue
+    const [px, py] = at(i)
+    if (k === EV_BORN) {
+      const u = sub(i, 0.2, 0.7)
+      if (u > 0 && u < 1) {
+        const pu = u < 0.4 ? u / 0.4 : 1 - (u - 0.4) / 0.6, c = BLOOM_RGB[cells[i]]
+        ctx.globalAlpha = 0.85 * clamp01(pu)
+        ctx.fillStyle = `rgb(${mixToWhite(c[0], 0.9)},${mixToWhite(c[1], 0.9)},${mixToWhite(c[2], 0.9)})`
+        ctx.beginPath(); ctx.arc(px, py, CELL * 0.14 * easeOutBack(clamp01(u * 1.4)), 0, Math.PI * 2); ctx.fill()
+      }
+      if (u < 0.8) {
+        const f = cells[i], x = i % w, y = (i / w) | 0
+        let bx = -1, by = -1
+        for (let dy = -1; dy <= 1 && bx < 0; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            const xx = x + dx, yy = y + dy
+            if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
+            if (prevSnap[yy * w + xx] === f) { bx = xx; by = yy; break }
+          }
+        if (bx >= 0) {
+          const c = BLOOM_RGB[f]
+          ctx.globalAlpha = 0.42 * (1 - u / 0.8)
+          ctx.strokeStyle = `rgb(${mixToWhite(c[0], 0.6)},${mixToWhite(c[1], 0.6)},${mixToWhite(c[2], 0.6)})`
+          ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(bx * CELL + CELL / 2, by * CELL + CELL / 2); ctx.lineTo(px, py); ctx.stroke()
+        }
+      }
+    } else if (k === EV_DIE_COMBAT) {
+      const ag = BLOOM_RGB[cause[i]] ?? [255, 240, 214]
+      const su = sub(i, 0, 0.12)
+      if (su < 1) {
+        const ang = Math.atan2(py - evCy * CELL - CELL / 2, px - evCx * CELL - CELL / 2)
+        ctx.globalAlpha = 0.95 * (1 - su); ctx.strokeStyle = `rgb(${ag[0]},${ag[1]},${ag[2]})`; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(px - Math.cos(ang) * CELL * 1.6 * (1 - su), py - Math.sin(ang) * CELL * 1.6 * (1 - su)); ctx.lineTo(px, py); ctx.stroke()
+      }
+      const ru = sub(i, 0.15, 0.95)
+      if (ru > 0 && ru < 1 && CELL >= 7) {
+        ctx.globalAlpha = 0.9 * (1 - ru)
+        ctx.strokeStyle = `rgb(${mixToWhite(ag[0], 0.15)},${mixToWhite(ag[1], 0.15)},${mixToWhite(ag[2], 0.15)})`
+        ctx.lineWidth = 2 * (1 - ru) + 0.5
+        ctx.beginPath(); ctx.arc(px, py, CELL * (0.4 + 1.0 * easeOutCubic(ru)), 0, Math.PI * 2); ctx.stroke()
+      }
+    } else if (k === EV_CONVERT) {
+      const fu = sub(i, 0.08, 0.3)
+      if (fu < 1) { ctx.globalAlpha = 0.9 * (1 - fu); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px, py, CELL * 0.3, 0, Math.PI * 2); ctx.fill() }
+    }
+  }
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
+}
+const mixBlack = (v: number, t: number) => Math.round(v * (1 - t))
+
 // ── the momentum frame ─────────────────────────────────────────────────────
 // The board's border IS the territory gauge: your green grows outward from
 // the center of the left edge, the rival's red from the center of the right,
@@ -643,7 +810,12 @@ export function render(
     }
   }
 
-  drawCellsFluoro(ctx, s, w)
+  if (fx.anim) {
+    if (s.gen !== evGen) computeEvents(s, w, h)
+    drawCellsAnimated(ctx, s, w, h, fx.genT)
+  } else {
+    drawCellsFluoro(ctx, s, w)
+  }
 
   // Special-cell nuclei — and the martyr's visible tripwire.
   for (let i = 0; i < s.types.length; i++) {

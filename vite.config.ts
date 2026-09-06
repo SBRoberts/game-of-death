@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Served from a GitHub Pages project site: https://sbroberts.github.io/game-of-death/.
+  // The subpath must be absolute here so the PWA service-worker scope is correct.
+  // (Switch to '/' if you ever move to a custom domain / apex host.)
+  base: '/game-of-death/',
   plugins: [
     react(),
     // Fully offline after first visit: every asset is local and precached.

@@ -81,6 +81,11 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
     let cell = 12
     let gw = 0
     let gh = 0
+    // Backing-resolution multiplier. Starts at 1 for instant smoothness (Firefox
+    // software-composites the bloom, so retina backing = ~4× fill cost), then a
+    // one-shot probe upshifts toward devDpr if this browser proves it's cheap —
+    // which doubles as a subtle sharpen into the rack-focus reveal.
+    const devDpr = Math.min(2, window.devicePixelRatio || 1)
     let dpr = 1
     let cur = new Uint8Array(0) // faction per cell: 0 dead, 1 you (green), 2 rival (red)
     let nxt = new Uint8Array(0)
@@ -111,18 +116,29 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       }
     }
 
-    const build = () => {
-      dpr = Math.min(2, window.devicePixelRatio || 1)
-      W = window.innerWidth
-      H = window.innerHeight
-      cell = Math.max(9, Math.min(15, Math.round(Math.min(W, H) / 66)))
-      gw = Math.ceil(W / cell) + 1
-      gh = Math.ceil(H / cell) + 1
+    // Size the canvas + bloom buffer to the current backing scale. Cheap enough
+    // to re-run when the adaptive probe changes `dpr` — it doesn't touch the
+    // grid or the living colony, so resolution shifts without a visible reseed.
+    const setBacking = () => {
       canvas.width = Math.floor(W * dpr)
       canvas.height = Math.floor(H * dpr)
       canvas.style.width = `${W}px`
       canvas.style.height = `${H}px`
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      if (!cellBuf) cellBuf = document.createElement('canvas')
+      cellBuf.width = canvas.width
+      cellBuf.height = canvas.height
+      bctx = cellBuf.getContext('2d')
+      if (bctx) bctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+
+    const build = () => {
+      W = window.innerWidth
+      H = window.innerHeight
+      cell = Math.max(9, Math.min(15, Math.round(Math.min(W, H) / 66)))
+      gw = Math.ceil(W / cell) + 1
+      gh = Math.ceil(H / cell) + 1
+      setBacking()
 
       cur = new Uint8Array(gw * gh)
       nxt = new Uint8Array(gw * gh)
@@ -154,11 +170,6 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
         rival: bakeSprite(MCHERRY, cell),
         white: bakeSprite([235, 252, 255], cell),
       }
-      cellBuf = document.createElement('canvas')
-      cellBuf.width = canvas.width
-      cellBuf.height = canvas.height
-      bctx = cellBuf.getContext('2d')
-      if (bctx) bctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
       // Pre-compute the marquee chase-light ring (geometry depends only on size).
       const bm = 16
@@ -308,8 +319,16 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
     let last = t0
     let simAcc = 0
 
+    // One-shot resolution probe: sample real frame work over a short window
+    // (skipping the first few settling frames), then upshift the backing scale
+    // toward devDpr only if this browser renders the loop cheaply. Firefox stays
+    // at 1 (smooth); Chrome/Safari sharpen to retina.
+    let probeAcc = 0
+    let probeN = 0
+    let probed = devDpr <= 1
     let raf = 0
     const frame = (now: number) => {
+      const tf = probed ? 0 : performance.now() // frame-start stamp for the probe only
       const dtMs = Math.min(50, now - last)
       last = now
       const sinceStart = now - t0
@@ -406,10 +425,27 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       }
 
       // ── eyepiece chrome ────────────────────────────────────────────────────
+      // Grain + vignette are now GPU-composited CSS layers (see styles.css) —
+      // they used to be full-screen canvas passes that Firefox software-rendered.
       drawReticle(ctx, W, H, now, focus, reduced)
       drawMarquee(ctx, marqueePts, now, reduced)
-      drawGrain(ctx, W, H, now, reduced)
-      drawVignette(ctx, W, H)
+
+      // Adaptive-resolution probe (one-shot): after a few settling frames,
+      // average the real per-frame work; upshift the backing scale only if
+      // there's clear headroom for the 4× fill that retina costs.
+      if (!probed) {
+        probeN++
+        if (probeN > 6) probeAcc += performance.now() - tf
+        if (probeN >= 26) {
+          probed = true
+          const avg = probeAcc / (probeN - 6)
+          const want = avg < 3.5 ? devDpr : avg < 6 ? Math.min(1.5, devDpr) : 1
+          if (want > dpr) {
+            dpr = want
+            setBacking()
+          }
+        }
+      }
 
       raf = requestAnimationFrame(frame)
     }
@@ -444,6 +480,8 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
   return (
     <div className="title-screen">
       <canvas ref={canvasRef} className="title-canvas" aria-label="THE GAME OF DEATH" role="img" />
+      <div className="title-vignette" aria-hidden="true" />
+      <div className="title-grain" aria-hidden="true" />
       <div className="title-scanlines" aria-hidden="true" />
 
       <div className="title-caption" aria-hidden="true">
@@ -553,43 +591,3 @@ function drawMarquee(
   ctx.globalCompositeOperation = 'source-over'
 }
 
-let grainTile: HTMLCanvasElement | null = null
-function drawGrain(ctx: CanvasRenderingContext2D, W: number, H: number, now: number, reduced: boolean) {
-  if (!grainTile) {
-    grainTile = document.createElement('canvas')
-    grainTile.width = grainTile.height = 128
-    const g = grainTile.getContext('2d')!
-    const img = g.createImageData(128, 128)
-    for (let i = 0; i < img.data.length; i += 4) {
-      const v = (Math.random() * 255) | 0
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = v
-      img.data[i + 3] = 255
-    }
-    g.putImageData(img, 0, 0)
-  }
-  const pat = ctx.createPattern(grainTile, 'repeat')!
-  ctx.globalCompositeOperation = 'overlay'
-  ctx.globalAlpha = reduced ? 0.03 : 0.05
-  ctx.save()
-  if (!reduced) ctx.translate((now / 40) % 128, (now / 55) % 128)
-  ctx.fillStyle = pat
-  ctx.fillRect(-128, -128, W + 256, H + 256)
-  ctx.restore()
-  ctx.globalAlpha = 1
-  ctx.globalCompositeOperation = 'source-over'
-}
-
-let vgKey = ''
-let vg: CanvasGradient | null = null
-function drawVignette(ctx: CanvasRenderingContext2D, W: number, H: number) {
-  const key = `${W}x${H}`
-  if (key !== vgKey) {
-    vg = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.28, W / 2, H * 0.5, Math.max(W, H) * 0.72)
-    vg.addColorStop(0, 'rgba(2,4,10,0)')
-    vg.addColorStop(0.7, 'rgba(2,4,10,0.35)')
-    vg.addColorStop(1, 'rgba(1,2,6,0.86)')
-    vgKey = key
-  }
-  ctx.fillStyle = vg!
-  ctx.fillRect(0, 0, W, H)
-}

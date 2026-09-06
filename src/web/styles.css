@@ -2140,6 +2140,45 @@ canvas {
   display: block;
 }
 
+/* Vignette + grain used to be full-screen per-frame canvas passes; Firefox
+   software-composites those (grain's `overlay` + the radial fill cost ~50ms/
+   frame at retina). Moved to GPU-composited DOM layers: identical look, ~0
+   per-frame cost. Both sit above the canvas, below the scanlines/text. */
+.title-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 78% 82% at 50% 44%,
+    rgba(2, 4, 10, 0) 30%,
+    rgba(2, 4, 10, 0.35) 70%,
+    rgba(1, 2, 6, 0.86) 100%
+  );
+}
+.title-grain {
+  position: absolute;
+  inset: -64px; /* bleed so the drift never exposes an edge */
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  will-change: transform;
+  animation: title-grain-drift 1.6s steps(4) infinite;
+}
+@keyframes title-grain-drift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-14px, 8px); }
+  50% { transform: translate(10px, -12px); }
+  75% { transform: translate(-8px, -6px); }
+  100% { transform: translate(0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .title-grain { animation: none; opacity: 0.32; }
+}
+
 /* Cabinet-glass scanlines over everything. */
 .title-scanlines {
   position: absolute;

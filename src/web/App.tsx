@@ -486,6 +486,7 @@ export function App() {
     return d
   }, [seed, run, round])
   duelRef.current = duel
+  if (debug) (window as unknown as { __duel?: unknown }).__duel = duel
 
   const [speedIdx, setSpeedIdx] = useState(1)
   // Turn-based driver state (source of truth in refs; state mirrors drive the UI).
@@ -844,6 +845,9 @@ export function App() {
         // existing round-end meta via the status-change detection below).
         if (duel.state.gen >= incTargetRef.current && duel.status === 'running') {
           phaseRef.current = 'deploy'; setTurnPhase('deploy'); setSelected(null)
+          // Wipe the resolution's transient callouts (chain-tier / ☠ kill floats)
+          // so they don't linger over the board while you line up the next move.
+          floatsRef.current = []
           if (turnRef.current >= TURNS_PER_ROUND) {
             const p = duel.state.pops[PLAYER], r = duel.state.pops[RIVAL]
             // Territory decides; a dead-even board breaks on kills (not the house).
@@ -1044,7 +1048,11 @@ export function App() {
         reach: selectedRef.current !== null ? duel.radii[PLAYER] : null,
         punch: punchRef.current,
         warp: duel.playerWarp,
-        combo: cb.active && cb.total >= 5 ? { total: cb.total, tier: cb.tier, x: cb.cx, y: cb.cy } : null,
+        // Only while the cascade is actually resolving. The sim freezes `combo`
+        // when incubate ends, so without this gate a banked "CHAIN N" callout
+        // would hang over the frontier through the whole deploy phase — right
+        // where you're trying to aim your next placement.
+        combo: incubating && cb.active && cb.total >= 5 ? { total: cb.total, tier: cb.tier, x: cb.cx, y: cb.cy } : null,
         banner,
         genT: incubating && !frozen ? Math.min(1, (now - lastTick) / GEN_DUR) : 1,
         anim: incubating && hs,

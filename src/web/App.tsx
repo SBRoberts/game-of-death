@@ -313,7 +313,7 @@ function IncubateControl({
         onClick={onIncubate}
         aria-label="incubate — run the culture forward one turn (space)"
       >
-        {phase === 'incubate' ? 'INCUBATING…' : <>INCUBATE <span className="ib-key">␣</span></>}
+        {phase === 'incubate' ? 'INCUBATING…' : <>INCUBATE <span className="ib-key">SPACE</span></>}
       </button>
     </div>
   )
@@ -1176,7 +1176,10 @@ export function App() {
     [meta],
   )
   const runClear = over && hud.status === 'won' && round === ROUNDS.length
-  const coachStep = coached ? 0 : selected === null && !placedOnce ? 1 : !placedOnce ? 2 : 3
+  // Coach retired — the how-to teaches this cleanly, and the floating steps read
+  // as clutter over the board / cramped into the hand row in the turn layout.
+  const coachStep: number = 0
+  void coached; void placedOnce
 
   const canvasEl = (
     <canvas

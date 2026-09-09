@@ -4048,27 +4048,27 @@ canvas {
   border: 1px solid var(--line);
   padding: 5px 10px;
 }
-.mount-float.compact .armed-card {
+.armed-card.compact {
   gap: 12px;
   padding: 2px 6px;
 }
-.mount-float.compact .armed-tip {
+.armed-card.compact .armed-tip {
   display: none;
 }
-.mount-float.compact .armed-tile {
+.armed-card.compact .armed-tile {
   width: 36px;
   height: 36px;
 }
 /* Touch-first aim controls in the armed bar: a real rotate + cancel button
    (rotation was keyboard/right-click only — unreachable on a phone). */
-.mount-float.compact .armed-hints {
+.armed-card.compact .armed-hints {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 10px;
   margin-left: auto;
 }
-.mount-float.compact .armed-howto {
+.armed-card.compact .armed-howto {
   color: var(--faint);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -4144,4 +4144,209 @@ canvas {
     padding: 16px 16px 14px;
     gap: 10px;
   }
+}
+
+/* ═══ Portrait play (phone held upright) ════════════════════════════════════
+   The slide is width-limited up top; the tall remainder is a roomy, thumb-
+   reachable control dock. Landscape still offers the larger board on rotate. */
+.mount-portrait {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+.mount-portrait .p-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px 7px;
+}
+.mount-portrait .p-biomass {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.mount-portrait .p-biomass .lbl-xs {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+}
+.mount-portrait .p-biomass .biomass-inline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.mount-portrait .p-biomass .val {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gold);
+}
+.mount-portrait .p-biomass .rate {
+  font-size: 12px;
+  color: var(--dim);
+}
+.mount-portrait .p-round {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+}
+.mount-portrait .p-round .round-pips {
+  display: none; /* the "R n/6" text carries it; pips would crowd the strip */
+}
+.mount-portrait .p-round .rn {
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.mount-portrait .p-menu {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.mount-portrait .p-menu .glyph-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 17px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--dim);
+  cursor: pointer;
+}
+.mount-portrait .p-menu .ash-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  cursor: pointer;
+  position: relative;
+}
+.mount-portrait .p-menu .ash-readout .val {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.mount-portrait .p-biomass {
+  flex-shrink: 0;
+}
+.mount-portrait .p-board {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2px 0;
+}
+.mount-portrait .p-board .board-frame {
+  position: relative;
+  line-height: 0;
+}
+.mount-portrait canvas {
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
+
+.mount-portrait .p-dock {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 14px 26px;
+}
+/* Hand is a vertical stack of full-width cards (variant="rail") — legible names
+   and big touch rows, using the portrait dock's ample height. */
+.mount-portrait .p-hand .hand-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mount-portrait .p-hand .card {
+  width: 100%;
+  min-height: 62px;
+  padding: 11px 13px;
+  align-items: center;
+  gap: 13px;
+}
+.mount-portrait .p-hand .card .tile {
+  width: 40px;
+  height: 40px;
+}
+.mount-portrait .p-hand .card .name {
+  font-size: 15px;
+}
+.mount-portrait .p-hand .card .keycap.card-key {
+  display: none;
+}
+.mount-portrait .p-hand .card .name-row {
+  padding-right: 0; /* no keycap badge on touch — reclaim the reserved space */
+}
+.mount-portrait .p-hand .card .blurb {
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--faint);
+}
+.mount-portrait .p-hand .reroll-bar {
+  display: flex;
+  flex-direction: row;
+  gap: 9px;
+  margin-top: 11px;
+}
+.mount-portrait .p-hand .reroll {
+  flex: 1;
+  min-height: 40px;
+  font-size: 11px;
+}
+.mount-portrait .incubate-well {
+  align-items: stretch;
+  gap: 8px;
+}
+.mount-portrait .incubate-well .turn-line {
+  justify-content: center;
+}
+.mount-portrait .incubate-btn {
+  min-height: 56px;
+  width: 100%;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+}
+
+/* Portrait armed (aiming) bar: a slim glass panel; the board is above and stays
+   visible, so this just shows what's armed + the touch turn/cancel controls. */
+.mount-portrait .p-hand.armed {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 12px;
+}
+/* 360px is too tight for the long "drag the slide" hint alongside the chips —
+   drop it (the REACH zone + gesture carry it) and let the name flex/truncate so
+   the switch chips + turn/cancel buttons all fit one clean row. */
+.mount-portrait .armed-card.compact .armed-howto {
+  display: none;
+}
+.mount-portrait .armed-card.compact .armed-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mount-portrait .armed-card.compact .armed-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mount-portrait .armed-card.compact .armed-switch {
+  flex-shrink: 0;
 }

@@ -138,7 +138,22 @@ interface Layout {
 function computeLayout(w: number, h: number): Layout {
   const aspect = w / h
   const compact = w < 1024
-  if (aspect < 1.0) return { mount: 'portrait', cell: 8, railW: 0, cssW: 0, cssH: 0, compact }
+  if (aspect < 1.0) {
+    // Portrait PLAY: the board is width-limited (128 columns across the short
+    // edge); the tall remainder holds a roomy, thumb-reachable control panel.
+    // Render crisp at 3px cells, CSS-upscale to fill the width — capped so the
+    // board never eats more than ~half the height (the dock gets the rest).
+    const base = 3
+    const scale = Math.min(2.6, (w - 12) / (128 * base), (h * 0.52) / (80 * base))
+    return {
+      mount: 'portrait',
+      cell: base,
+      railW: 0,
+      cssW: Math.round(128 * base * scale),
+      cssH: Math.round(80 * base * scale),
+      compact: true,
+    }
+  }
   let mount: Mount
   // Float ("tray") overlays the HUD on the board's corners — the most
   // space-efficient layout, and the only one that fits a phone in landscape
@@ -358,7 +373,7 @@ function ArmedCard({
   const size = Math.max(w, h, 4)
   const roleColor = ROLE_COLOR[p.role] ?? 'var(--dim)'
   return (
-    <div className="armed-card" role="status" aria-label={`aiming ${p.name}: ${p.tip}`}>
+    <div className={`armed-card ${compact ? 'compact' : ''}`} role="status" aria-label={`aiming ${p.name}: ${p.tip}`}>
       <div className="armed-tile" aria-hidden="true">
         <svg viewBox={`0 0 ${size} ${size}`}>
           {cells.map(([x, y]) => (
@@ -593,20 +608,6 @@ export function App() {
     }
   }, [speedIdx, screen])
 
-  // Portrait pauses the run and resumes on rotate (HANDOFF §8).
-  const prePortraitSpeed = useRef<number | null>(null)
-  useEffect(() => {
-    if (layout.mount === 'portrait') {
-      if (prePortraitSpeed.current === null) {
-        prePortraitSpeed.current = speedRef.current
-        setSpeedIdx(0)
-        setAnnounce('Turn the slide — the specimen needs the long edge of your screen. The round is paused.')
-      }
-    } else if (prePortraitSpeed.current !== null) {
-      setSpeedIdx(prePortraitSpeed.current)
-      prePortraitSpeed.current = null
-    }
-  }, [layout.mount])
 
   const newRun = useCallback(() => {
     runLoadoutRef.current = [] // wipe the drafted build — every run starts pure
@@ -778,7 +779,7 @@ export function App() {
   // The loop: fixed-timestep sim ticks driven by rAF, render every frame.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || layout.mount === 'portrait' || screen !== 'game') return
+    if (!canvas || screen !== 'game') return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     setCell(layout.cell)
@@ -1433,42 +1434,6 @@ export function App() {
     )
   }
 
-  // ── portrait ─────────────────────────────────────────────────────────────
-  if (layout.mount === 'portrait') {
-    return (
-      <div className="portrait">
-        <div className="head">
-          <Mark />
-          <span>GAME OF DEATH</span>
-        </div>
-        <div className="spacer" />
-        <div className="rotate-glyph" aria-hidden="true" />
-        <div className="turn">TURN THE SLIDE</div>
-        <div className="why">
-          The specimen is 128 × 80 cells. It needs the long edge of your screen — anything less and
-          the cells stop being readable.
-        </div>
-        <div className="spacer" />
-        <div className="status">
-          <div className="row">
-            <span className="lbl-sm">RUN IN PROGRESS</span>
-            <span className="v">
-              round {round}/{ROUNDS.length} · gen {hud?.gen ?? 0}
-            </span>
-          </div>
-          <div className="row">
-            <span className="lbl-sm">ASH</span>
-            <span className="v gold">⬡ {meta.ash}</span>
-          </div>
-          <div className="fine">nothing is lost — the round is paused where you left it</div>
-        </div>
-        <div className="sr-only" role="status" aria-live="polite">
-          {announce}
-        </div>
-      </div>
-    )
-  }
-
   const genomeEl = showGenome && (
     <Genome
       meta={meta}
@@ -1513,6 +1478,87 @@ export function App() {
       R
     </button>
   )
+
+  // ── portrait mount (phone held upright) ────────────────────────────────────
+  // The slide is width-limited up top; a roomy, thumb-reachable dock sits below.
+  // Landscape still gives a bigger board for anyone who rotates.
+  if (layout.mount === 'portrait') {
+    return (
+      <div className={`stage mount-portrait ${shake} ${surge}`}>
+        <div className="p-top">
+          <div className="p-biomass">
+            <span className="lbl-xs">BIOMASS</span>
+            <span className="biomass-inline">
+              <span className="val num">{hud?.biomass ?? 0}</span>
+              <span className="rate num">+{hud?.rate ?? '0.0'}/s</span>
+            </span>
+          </div>
+          <div className="p-round">
+            <RoundPips round={round} cleared={over && hud.status === 'won'} />
+            <span className="rn">{ROUNDS[round - 1].boss ? 'FINAL' : `R${round}/${ROUNDS.length}`}</span>
+          </div>
+          <div className="p-menu">
+            <button className="ash-readout" onClick={() => setShowGenome(true)} aria-label={`genome — ${meta.ash} ash banked`}>
+              <span className="lbl-xs">ASH</span>
+              <span className="val num">⬡ {meta.ash}</span>
+              {canShop && <span className="shop-badge" />}
+            </button>
+            <button className="glyph-btn" aria-label="settings" title="settings" onClick={() => setShowSettings(true)}>⚙</button>
+            <button
+              className={`glyph-btn newrun-island ${armAbandon ? 'armed' : ''}`}
+              aria-label={armAbandon ? 'confirm abandon run' : 'new run'}
+              onClick={requestNewRun}
+            >
+              {armAbandon ? '?' : '↺'}
+            </button>
+          </div>
+        </div>
+
+        <div className="p-board">
+          <div className="board-frame" style={{ width: layout.cssW, height: layout.cssH }}>
+            {canvasEl}
+          </div>
+        </div>
+
+        <div className="p-dock">
+          <div className={`p-hand ${selected !== null ? 'armed' : ''}`}>
+            {selected !== null && !over ? (
+              <ArmedCard
+                duel={duel}
+                selected={selected}
+                rotation={rotation}
+                onSelect={selectCard}
+                onCancel={() => setSelected(null)}
+                onRotate={() => setRotation((r) => (r + 1) % 4)}
+                compact
+              />
+            ) : (
+              <Hand
+                duel={duel}
+                biomass={hud?.biomass ?? 0}
+                selected={selected}
+                rotation={rotation}
+                onSelect={selectCard}
+                onRerollCard={rerollCard}
+                onRerollHand={rerollHand}
+                variant="rail"
+              />
+            )}
+          </div>
+          <IncubateControl turn={turnNum} phase={turnPhase} disabled={over} onIncubate={incubate} />
+        </div>
+
+        {overlayEl}
+        {chestPill}
+        {chestEl}
+        {shopEl}
+        {genomeEl}
+        {settingsEl}
+        {rotateDetent}
+        {srLive}
+      </div>
+    )
+  }
 
   // ── float mount ──────────────────────────────────────────────────────────
   if (layout.mount === 'float') {

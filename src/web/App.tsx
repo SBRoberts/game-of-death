@@ -130,11 +130,15 @@ interface Layout {
   /** CSS pixel size for the canvas (differs from cell grid when upscaling). */
   cssW: number
   cssH: number
+  /** Phone-class screen: the float HUD renders as full-viewport touch bars
+   *  instead of board-hugging corner islands. */
+  compact: boolean
 }
 
 function computeLayout(w: number, h: number): Layout {
   const aspect = w / h
-  if (aspect < 1.0) return { mount: 'portrait', cell: 8, railW: 0, cssW: 0, cssH: 0 }
+  const compact = w < 1024
+  if (aspect < 1.0) return { mount: 'portrait', cell: 8, railW: 0, cssW: 0, cssH: 0, compact }
   let mount: Mount
   // Float ("tray") overlays the HUD on the board's corners — the most
   // space-efficient layout, and the only one that fits a phone in landscape
@@ -176,7 +180,7 @@ function computeLayout(w: number, h: number): Layout {
     cssW = 128 * cell
     cssH = 80 * cell
   }
-  return { mount, cell, railW, cssW, cssH }
+  return { mount, cell, railW, cssW, cssH, compact }
 }
 
 function useLayout(): Layout {
@@ -336,12 +340,16 @@ function ArmedCard({
   rotation,
   onSelect,
   onCancel,
+  onRotate,
+  compact = false,
 }: {
   duel: Duel
   selected: number
   rotation: number
   onSelect: (i: number) => void
   onCancel: () => void
+  onRotate: () => void
+  compact?: boolean
 }) {
   const p = duel.patternFor(PLAYER, duel.hand[selected])
   const cells = rotate(p.cells, rotation)
@@ -373,11 +381,21 @@ function ArmedCard({
           </button>
         ))}
       </div>
-      <div className="armed-hints">
-        <span>click a lit cell</span>
-        {p.dir !== undefined && <span><kbd>R</kbd> rotate</span>}
-        <button className="armed-cancel" onClick={onCancel}><kbd>Esc</kbd> cancel</button>
-      </div>
+      {compact ? (
+        <div className="armed-hints">
+          <span className="armed-howto">drag the slide · lift to place</span>
+          {p.dir !== undefined && (
+            <button className="armed-btn" onClick={onRotate} aria-label="rotate piece">⟳ turn</button>
+          )}
+          <button className="armed-btn armed-cancel" onClick={onCancel} aria-label="cancel">✕</button>
+        </div>
+      ) : (
+        <div className="armed-hints">
+          <span>click a lit cell</span>
+          {p.dir !== undefined && <span><kbd>R</kbd> rotate</span>}
+          <button className="armed-cancel" onClick={onCancel}><kbd>Esc</kbd> cancel</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -1498,12 +1516,12 @@ export function App() {
 
   // ── float mount ──────────────────────────────────────────────────────────
   if (layout.mount === 'float') {
-    return (
-      <div className={`stage mount-float ${shake} ${surge} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
-        <div className="board-slot">
-        <div className="board-frame" style={{ width: layout.cssW, height: layout.cssH }}>
-        {canvasEl}
-
+    // The HUD islands. On a roomy screen they hug the board's corners (inside
+    // board-frame). On a phone (compact) they render in a full-viewport layer
+    // instead — laid out as touch-first top/bottom bars (see .m-hud in CSS) —
+    // because the letterboxed board rect is far too narrow to hold them.
+    const hudIslands = (
+      <>
         <div className="island isl-tl">
           <div className="frost" aria-hidden="true" />
           <div className="specimen-body">
@@ -1581,6 +1599,8 @@ export function App() {
               rotation={rotation}
               onSelect={selectCard}
               onCancel={() => setSelected(null)}
+              onRotate={() => setRotation((r) => (r + 1) % 4)}
+              compact={layout.compact}
             />
           ) : (
             <Hand
@@ -1602,17 +1622,25 @@ export function App() {
             <span>gen {hud?.gen ?? 0}</span>
           </div>
         </div>
-
-        {coachStep > 0 && !over && (
-          <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">
-            The ghost double-simulates {TUNING.foresightGens} generations and grades the spot before you pay.
-          </CoachStep>
-        )}
-        {overlayEl}
-        {chestPill}
-        {chestEl}
-        {shopEl}
-        </div>
+      </>
+    )
+    return (
+      <div className={`stage mount-float ${shake} ${surge} ${layout.compact ? 'compact' : ''} ${(hud?.inset ?? 0) > 4 ? 'receded' : ''}`}>
+        <div className="board-slot">
+          <div className="board-frame" style={{ width: layout.cssW, height: layout.cssH }}>
+            {canvasEl}
+            {!layout.compact && hudIslands}
+            {coachStep > 0 && !over && (
+              <CoachStep n={2} title="AIM ON THE SLIDE" state={coachStep === 2 ? 'active' : 'pending'} className="coach-2">
+                The ghost double-simulates {TUNING.foresightGens} generations and grades the spot before you pay.
+              </CoachStep>
+            )}
+            {overlayEl}
+            {chestPill}
+            {chestEl}
+            {shopEl}
+          </div>
+          {layout.compact && <div className="m-hud">{hudIslands}</div>}
         </div>
         {rotateDetent}
         {genomeEl}

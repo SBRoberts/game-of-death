@@ -3869,160 +3869,260 @@ canvas {
   }
 }
 
-/* ═══ Mobile / small-screen float HUD ═══════════════════════════════════════
-   Below 1024px the whole viewport uses the float overlay (see computeLayout).
-   The desktop islands are sized for a wide board; on a phone board the six
-   floating corners collide and clip. Compact them into a clean top strip +
-   bottom strip that fit a landscape phone without overlap. */
-@media (max-width: 1023px) {
-  .mount-float .island {
-    z-index: 3;
-    border-radius: 7px;
-  }
+/* ═══ Mobile float HUD — full-viewport touch bars ═══════════════════════════
+   On a phone (layout.compact) the six HUD islands render in a full-viewport
+   .m-hud layer — a child of board-slot, NOT the letterboxed board rect — so
+   they get the whole width to breathe. Laid out as a top telemetry strip and a
+   bottom action dock with finger-first targets, framed by soft scrims so the
+   overlay reads as intentional instrument chrome rather than floating boxes. */
+.mount-float.compact .m-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none; /* taps fall through to the slide … */
+}
+.mount-float.compact .m-hud > .island {
+  position: absolute;
+  pointer-events: auto; /* … except on the HUD itself */
+  z-index: 1;
+  border-radius: 9px;
+}
+/* Soft scrims ground the top and bottom HUD against the slide. */
+.mount-float.compact .m-hud::before,
+.mount-float.compact .m-hud::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 96px;
+  pointer-events: none;
+}
+.mount-float.compact .m-hud::before {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(4, 6, 11, 0.8), rgba(4, 6, 11, 0));
+}
+.mount-float.compact .m-hud::after {
+  bottom: 0;
+  background: linear-gradient(to top, rgba(4, 6, 11, 0.85), rgba(4, 6, 11, 0));
+}
 
-  /* Top-left — biomass only; drop the specimen/seed line + divider. */
-  .mount-float .isl-tl {
-    top: 8px;
-    left: 8px;
-  }
-  .mount-float .isl-tl .specimen-body {
-    padding: 5px 10px;
-    gap: 0;
-  }
-  .mount-float .isl-tl .kv:first-of-type,
-  .mount-float .isl-tl .vdiv,
-  .mount-float .isl-tl .mark {
+/* Top-left — biomass only; drop the specimen/seed line + divider. */
+.mount-float.compact .isl-tl {
+  top: 10px;
+  left: 12px;
+}
+.mount-float.compact .isl-tl .specimen-body {
+  padding: 7px 13px;
+  gap: 0;
+}
+.mount-float.compact .isl-tl .kv:first-of-type,
+.mount-float.compact .isl-tl .vdiv,
+.mount-float.compact .isl-tl .mark {
+  display: none;
+}
+.mount-float.compact .isl-tl .biomass-inline .val {
+  font-size: 21px;
+}
+
+/* Top-center — round pips + name + warp; there's room now at full width. */
+.mount-float.compact .isl-tc {
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 0;
+  padding: 7px 16px;
+  gap: 5px;
+}
+.mount-float.compact .isl-tc .storm-group,
+.mount-float.compact .isl-tc .storm-track {
+  display: none;
+}
+.mount-float.compact .isl-tc .warp-track {
+  min-width: 56px;
+}
+
+/* Top-right — menu + ash, finger-sized. */
+.mount-float.compact .isl-tr {
+  top: 10px;
+  right: 12px;
+  gap: 8px;
+  padding: 5px 9px;
+}
+.mount-float.compact .isl-tr .glyph-btn {
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 17px;
+}
+.mount-float.compact .isl-tr .ash-readout {
+  min-height: 40px;
+  padding: 4px 10px;
+}
+
+/* Bottom-left — INCUBATE: the primary action, a big thumb button. */
+.mount-float.compact .isl-bl {
+  bottom: 12px;
+  left: 12px;
+  padding: 7px 9px;
+}
+.mount-float.compact .incubate-well {
+  min-width: 0;
+  gap: 6px;
+}
+.mount-float.compact .incubate-well .turn-line .lbl-xs,
+.mount-float.compact .incubate-well .turn-count {
+  display: none;
+}
+.mount-float.compact .incubate-well .turn-pips {
+  justify-content: center;
+  gap: 5px;
+}
+.mount-float.compact .incubate-btn {
+  min-height: 48px;
+  padding: 0 18px;
+  font-size: 14px;
+  gap: 8px;
+}
+.mount-float.compact .incubate-btn .ib-key {
+  display: none;
+}
+
+/* Bottom-center — the hand as a band between INCUBATE and the tickers; cards
+   flex to fill and stay touch-sized. */
+.mount-float.compact .isl-bc {
+  bottom: 12px;
+  left: 156px;
+  right: 12px;
+  transform: none;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.mount-float.compact .isl-bc .hand-cards.row {
+  flex: 1;
+  min-width: 0; /* let the row shrink below its cards' content width … */
+  gap: 8px;
+}
+.mount-float.compact .card.float-card {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0; /* … and let each card shrink to share the row evenly */
+  max-width: 200px;
+  min-height: 62px;
+  gap: 4px;
+  padding: 8px 10px;
+}
+.mount-float.compact .float-card .head {
+  gap: 8px;
+}
+.mount-float.compact .float-card .head .tile {
+  width: 30px;
+  height: 30px;
+}
+.mount-float.compact .float-card .head .tile svg {
+  width: 22px;
+  height: 22px;
+}
+.mount-float.compact .card .keycap.card-key {
+  display: none;
+}
+.mount-float.compact .card .blurb {
+  display: none;
+}
+/* Reroll: a slim column beside the cards. */
+.mount-float.compact .isl-bc .reroll-bar {
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 0;
+}
+.mount-float.compact .isl-bc .reroll {
+  padding: 6px 9px;
+  font-size: 10px;
+  white-space: nowrap;
+  min-height: 27px;
+}
+/* Armed readout stays a slim bar (with its own glass); drop the wrapping tip. */
+.mount-float.compact .isl-bc.armed {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  padding: 5px 10px;
+}
+.mount-float.compact .armed-card {
+  gap: 12px;
+  padding: 2px 6px;
+}
+.mount-float.compact .armed-tip {
+  display: none;
+}
+.mount-float.compact .armed-tile {
+  width: 36px;
+  height: 36px;
+}
+/* Touch-first aim controls in the armed bar: a real rotate + cancel button
+   (rotation was keyboard/right-click only — unreachable on a phone). */
+.mount-float.compact .armed-hints {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.mount-float.compact .armed-howto {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.armed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  min-width: 42px;
+  padding: 0 13px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--etch);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 130ms, background 130ms;
+}
+.armed-btn:active {
+  background: rgba(66, 245, 155, 0.12);
+  border-color: var(--you);
+}
+.armed-btn.armed-cancel {
+  color: var(--dim);
+  font-size: 15px;
+}
+
+/* Tickers (kills / captures / gen) are non-essential telemetry and there's no
+   room for them beside a full hand on a phone — hide them so the hand gets the
+   whole bottom-right. (They still live in the top-bar-free desktop layout.) */
+.mount-float.compact .isl-br {
+  display: none;
+}
+
+/* Narrowest phones (≈ iPhone SE landscape): drop the round's flavour name and
+   the warp meter from the top-centre so it can't crowd the top-right menu. */
+@media (max-width: 720px) {
+  .mount-float.compact .isl-tc .rlabel,
+  .mount-float.compact .isl-tc .warp-group {
     display: none;
   }
-
-  /* Top-center — pips + round number only; no min-width, label, or storm. */
-  .mount-float .isl-tc {
-    top: 8px;
-    min-width: 0;
-    padding: 5px 10px;
-    gap: 4px;
-  }
-  .mount-float .isl-tc .rlabel,
-  .mount-float .isl-tc .storm-group,
-  .mount-float .isl-tc .storm-track {
-    display: none;
-  }
-  .mount-float .isl-tc .warp-track {
-    min-width: 44px;
-  }
-
-  /* Top-right — tighten spacing. */
-  .mount-float .isl-tr {
-    top: 8px;
-    right: 8px;
-    gap: 8px;
+  .mount-float.compact .isl-tr {
+    gap: 6px;
     padding: 5px 8px;
   }
-
-  /* Bottom-left — compact incubate (still the primary action; keep it clear). */
-  .mount-float .isl-bl {
-    bottom: 8px;
-    left: 8px;
-    padding: 6px 7px;
-  }
-  .mount-float .incubate-well {
-    min-width: 0;
-    gap: 5px;
-  }
-  /* The "TURN" word + "n/8" count widen the well past the button; the pip row
-     already reads as the turn tracker, so drop the label + count on mobile. */
-  .mount-float .incubate-well .turn-line .lbl-xs,
-  .mount-float .incubate-well .turn-count {
-    display: none;
-  }
-  .mount-float .incubate-well .turn-pips {
-    justify-content: center;
-    gap: 4px;
-  }
-  .mount-float .incubate-btn {
-    padding: 8px 11px;
-    font-size: 12px;
-    gap: 6px;
-  }
-  .mount-float .incubate-btn .ib-key {
-    display: none; /* touch users tap the button; the SPACE hint just adds width */
-  }
-
-  /* Bottom-center — the hand becomes a band BETWEEN the incubate button (left)
-     and the tickers (right) instead of centering over them, so nothing collides.
-     Contents stay centered within that band. */
-  .mount-float .isl-bc {
-    bottom: 8px;
-    left: 124px;
-    right: 104px;
-    transform: none;
-    justify-content: center;
-    gap: 6px;
-    padding: 6px;
-  }
-  .mount-float .isl-bc.armed {
-    left: 124px;
-    right: 104px;
-  }
-  /* Keyboard hotkey caps are dead weight on touch and crowd the narrow cards. */
-  .mount-float .card .keycap.card-key {
-    display: none;
-  }
-  /* Armed readout stays a slim bar on mobile — the wrapping tip would grow it
-     tall and bury the board you're trying to tap. Name + role + chips suffice. */
-  .mount-float .armed-card {
-    gap: 10px;
-    padding: 4px 6px;
-  }
-  .mount-float .armed-tip {
-    display: none;
-  }
-  .mount-float .armed-tile {
-    width: 34px;
-    height: 34px;
-  }
-  .mount-float .card.float-card {
-    width: 104px;
-    gap: 4px;
-    padding: 6px;
-  }
-  .mount-float .float-card .head {
-    gap: 6px;
-  }
-  .mount-float .float-card .head .tile {
-    width: 26px;
-    height: 26px;
-  }
-  .mount-float .float-card .head .tile svg {
-    width: 20px;
-    height: 20px;
-  }
-  .mount-float .card .name {
-    font-size: 12px;
-  }
-  .mount-float .card .blurb {
-    display: none;
-  }
-  /* Stack the reroll controls into a narrow column beside the cards. */
-  .mount-float .isl-bc .reroll-bar {
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 0;
-  }
-  .mount-float .isl-bc .reroll {
-    padding: 5px 7px;
-    font-size: 10px;
-    white-space: nowrap;
-  }
-
-  /* Bottom-right — compact tickers. */
-  .mount-float .isl-br {
-    bottom: 8px;
-    right: 8px;
-    padding: 5px 8px;
-    gap: 1px;
+  .mount-float.compact .isl-tr .glyph-btn {
+    font-size: 16px;
   }
 }
+
 
 /* Between-round modals (shop, chest, cash-out, genome, settings) can be taller
    than a short landscape phone. Unbounded, they centre and clip both the header

@@ -93,7 +93,10 @@ button {
 .stage {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100vh; /* fallback */
+  height: 100dvh; /* fit the VISIBLE viewport under mobile browser chrome
+                     (iOS Safari's URL bar) — the page can't scroll, so plain
+                     100vh would hide the bottom of the HUD behind the bar. */
   background: var(--bg);
   overflow: hidden;
 }
@@ -2126,7 +2129,8 @@ canvas {
 .title-screen {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100vh; /* fallback */
+  height: 100dvh; /* visible viewport under mobile chrome */
   overflow: hidden;
   background: #04060b;
 }
@@ -4151,7 +4155,8 @@ canvas {
    reachable control dock. Landscape still offers the larger board on rotate. */
 .mount-portrait {
   width: 100vw;
-  height: 100vh;
+  height: 100vh; /* fallback */
+  height: 100dvh; /* visible viewport — keeps INCUBATE clear of iOS Safari's bar */
   display: flex;
   flex-direction: column;
   background: var(--bg);

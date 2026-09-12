@@ -1,7 +1,8 @@
 /**
  * The gauntlet: an escalating series of rounds. Escalation is data —
- * the rival's faction loadout, sharper planner settings, the player's warp cap,
- * and a per-round BLEACH schedule (when/how fast the field dies inward) so each
+ * the rival's faction loadout, sharper planner settings, how many placements
+ * it telegraphs per turn, the player's warp cap, and a per-round BLEACH
+ * schedule (which turn the field starts dying inward, and how fast) so each
  * round pressures the board differently. The last round is a boss.
  */
 
@@ -14,34 +15,39 @@ export interface RoundDef {
    *  seed is a fair fight early and unlocking bigger seeds matters later. */
   rivalSeed: string
   aiSamples: number
-  aiActEvery: number
+  /** Placements the rival attempts at the start of each of your deploy phases
+   *  (telegraphed — your projection sees them before you commit). */
+  rivalActs: number
   /** Max ACTIVE warp the player's build may run this round (the pure→warped
    *  gradient). Round 1 caps at 0 → provably pure Conway; higher rounds admit
    *  rarer, wilder tuples. Over-cap drafted picks stay dormant. */
   warpCap: number
-  /** BLEACH schedule: the generation the field starts dying inward, and how
-   *  many generations per 1-cell inset. Varied per round so some rounds bleach
-   *  early/fast (hold the centre) and others stay open. A round is 8 turns ×
-   *  16 gens = 128 gens, so a grace above ~130 never bleaches. */
-  bleachGrace: number
-  bleachEvery: number
+  /** BLEACH: the turn (1-based) whose incubation first eats the edges, and the
+   *  cells of inset added per turn from then on. Varied per round so some
+   *  rounds force the centre early and others stay open. 0 = never. */
+  bleachFromTurn: number
+  bleachPerTurn: number
   /** The finale — a distinctive boss specimen. */
   boss?: boolean
 }
 
 export const ROUNDS: readonly RoundDef[] = [
-  // 1 — open field, learn the game. No bleach.
-  { label: 'the neighbor', rivalLoadout: [], rivalSeed: 'seedling', aiSamples: 6, aiActEvery: 20, warpCap: 0, bleachGrace: 999, bleachEvery: 14 },
-  // 2 — a real opponent; a mild late bleach nibbles the edges.
-  { label: 'the veteran', rivalLoadout: ['martyr'], rivalSeed: 'soup', aiSamples: 8, aiActEvery: 16, warpCap: 3, bleachGrace: 96, bleachEvery: 12 },
-  // 3 — a fast-breeding swarm and a fast, tight bleach: hold the centre.
-  { label: 'the swarm', rivalLoadout: ['highlife'], rivalSeed: 'soup', aiSamples: 9, aiActEvery: 14, warpCap: 5, bleachGrace: 40, bleachEvery: 8 },
-  // 4 — immortal, draining blood; a moderate mid-round bleach. Acts on the
-  //     escalation cadence (a clean planner made the old settings a soft spot).
-  { label: 'elder blood', rivalLoadout: ['elder', { key: 'vampire', level: 2 }], rivalSeed: 'soup', aiSamples: 12, aiActEvery: 11, warpCap: 7, bleachGrace: 64, bleachEvery: 12 },
+  // 1 — open field, learn the game. The edges only start to go in the last two turns.
+  { label: 'the neighbor', rivalLoadout: [], rivalSeed: 'seedling', aiSamples: 6, rivalActs: 1, warpCap: 0, bleachFromTurn: 7, bleachPerTurn: 1 },
+  // 2 — a real opponent; a mild late bleach nibbles the flanks.
+  { label: 'the veteran', rivalLoadout: ['martyr'], rivalSeed: 'soup', aiSamples: 8, rivalActs: 1, warpCap: 3, bleachFromTurn: 6, bleachPerTurn: 1 },
+  // 3 — a fast-breeding swarm and a fast, early bleach: hold the centre.
+  { label: 'the swarm', rivalLoadout: ['highlife'], rivalSeed: 'soup', aiSamples: 9, rivalActs: 1, warpCap: 5, bleachFromTurn: 3, bleachPerTurn: 2 },
+  // 4 — immortal, draining blood, two placements a turn; a moderate mid-round bleach.
+  { label: 'elder blood', rivalLoadout: ['elder', { key: 'vampire', level: 2 }], rivalSeed: 'soup', aiSamples: 12, rivalActs: 2, warpCap: 7, bleachFromTurn: 5, bleachPerTurn: 2 },
   // 5 — a relentless, hardy bloom that drains, under an early slow bleach.
-  { label: 'the bloom', rivalLoadout: ['highlife', { key: 'vampire', level: 2 }, 'hardy'], rivalSeed: 'soup', aiSamples: 11, aiActEvery: 11, warpCap: 9, bleachGrace: 32, bleachEvery: 14 },
-  // 6 — THE PROGENITOR: immortal, hardy, draining, and mined — a wall. Plans
-  //     deepest and acts most often of any round so the finale reads as a peak.
-  { label: 'the progenitor', rivalLoadout: ['elder', { key: 'vampire', level: 3 }, 'martyr', 'hardy'], rivalSeed: 'soup', aiSamples: 16, aiActEvery: 6, warpCap: 12, bleachGrace: 48, bleachEvery: 10, boss: true },
+  { label: 'the bloom', rivalLoadout: ['highlife', { key: 'vampire', level: 2 }, 'hardy'], rivalSeed: 'soup', aiSamples: 11, rivalActs: 2, warpCap: 9, bleachFromTurn: 3, bleachPerTurn: 1 },
+  // 6 — THE PROGENITOR: every specimen you have faced, at once. Immortal
+  //     (elder), hardy, draining (vampire III), mined (martyr) AND fast-breeding
+  //     (highlife) — the bloom's population engine was what actually made round
+  //     5 brutal, so the finale carries it too. Plans deepest and deploys FOUR
+  //     patterns a turn. A heavy early bleach made it EASIER than round 5 (it
+  //     eats the boss's larger mass first), so the clock here is late and light
+  //     and the pressure comes from the specimen itself.
+  { label: 'the progenitor', rivalLoadout: ['elder', { key: 'vampire', level: 3 }, 'martyr', 'hardy', 'highlife'], rivalSeed: 'soup', aiSamples: 16, rivalActs: 4, warpCap: 12, bleachFromTurn: 6, bleachPerTurn: 1, boss: true },
 ]

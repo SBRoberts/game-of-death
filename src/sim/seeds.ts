@@ -110,7 +110,7 @@ OO..OOO
     id: 'glidergun',
     name: 'Gosper Gun',
     category: 'generator',
-    blurb: 'Fires a glider every 30 generations — an endless army from a fixed emplacement. The prize seed.',
+    blurb: 'Emits a glider every 30 generations — an endless stream from a fixed emplacement. The prize seed.',
     ashCost: 200,
     cells: GOSPER,
   },

@@ -161,8 +161,9 @@ export function HowTo({ onClose, onStart }: HowToProps) {
           <div className="howto-step">
             <span className="n">3</span>
             <div>
-              <b>Incubate.</b> <kbd>space</kbd> runs the culture forward a turn. Outgrow the rival —
-              or drive them extinct.
+              <b>Incubate.</b> <kbd>space</kbd> runs the culture forward one turn — exactly what the
+              ghost projected. Then read the settle report, and plan again. Outgrow the rival over
+              eight turns, or drive them extinct.
             </div>
           </div>
         </div>
@@ -189,7 +190,7 @@ export function HowTo({ onClose, onStart }: HowToProps) {
             />
             <div className="rule-text">
               <b>Flanking</b>
-              <span>outnumber an enemy cell and it defects to you</span>
+              <span>outnumber a rival cell and it defects to you</span>
             </div>
           </div>
           <div className="rule">
@@ -199,8 +200,8 @@ export function HowTo({ onClose, onStart }: HowToProps) {
               after={null}
             />
             <div className="rule-text">
-              <b>Casualties</b>
-              <span>outnumbered and contested, it dies — chain for a rout</span>
+              <b>Lysis</b>
+              <span>outnumbered and contested, it dies — chain it into a cascade</span>
             </div>
           </div>
         </div>

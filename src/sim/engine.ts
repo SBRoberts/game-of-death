@@ -6,7 +6,22 @@
  *   Casualty:    outnumbered below that margin, it dies instead.
  * — and per-cell type overrides (Elder/Vampire/Martyr, see celltypes.ts).
  * Ties resolve to "nothing happens" so no faction gets a hidden edge.
+ *
+ * Every step also writes per-cell EVENT and CAUSE buffers. They are the single
+ * authoritative answer to "what happened here, and who did it" — a starvation
+ * and a lysis look identical in a prev/cells diff, so attribution (the Chain,
+ * the settle report, the aggressor-hued kill rings) must read these, never the
+ * diff. Filled in the same branches that decide each cell's fate: no second pass.
  */
+
+/** Per-cell events written by step() into `s.events`. */
+export const EV_NONE = 0
+export const EV_BORN = 1
+export const EV_DIED_NATURAL = 2 // starved or smothered with no enemy in contact — its own churn
+export const EV_DIED_COMBAT = 3 // died in contact with an enemy: lysis, a martyr blast, or
+// crowding — an overpopulation death is that enemy's doing when its cells are the ones crowding.
+export const EV_CONVERTED = 4 // defected to an enemy: flanking, or a vampire's drain
+export const EV_BLEACHED = 5 // eaten by the closing field — nobody's doing but the clock
 
 import { CELL_TYPES } from './celltypes'
 import type { SimConfig, SimState } from './types'
@@ -25,10 +40,13 @@ export function createState(cfg: SimConfig): SimState {
     prev: new Uint8Array(n),
     types: new Uint8Array(n),
     prevTypes: new Uint8Array(n),
+    events: new Uint8Array(n),
+    cause: new Uint8Array(n),
     pops: cfg.factions.map(() => 0),
     ringInset: 0,
     deaths: new Int32Array(nf),
     combatDeaths: new Int32Array(nf),
+    naturalDeaths: new Int32Array(nf),
     converts: new Int32Array(nf * nf),
     killN: 0,
     killSumX: 0,
@@ -45,10 +63,13 @@ export function cloneState(s: SimState): SimState {
     prev: s.prev.slice(),
     types: s.types.slice(),
     prevTypes: s.prevTypes.slice(),
+    events: s.events.slice(),
+    cause: s.cause.slice(),
     pops: s.pops.slice(),
     ringInset: s.ringInset,
     deaths: s.deaths.slice(),
     combatDeaths: s.combatDeaths.slice(),
+    naturalDeaths: s.naturalDeaths.slice(),
     converts: s.converts.slice(),
     killN: s.killN,
     killSumX: s.killSumX,
@@ -91,7 +112,12 @@ export function step(s: SimState): void {
   const inSafe = (x: number, y: number): boolean => x >= x0 && x < x1 && y >= y0 && y < y1
   const deaths = s.deaths
   const combatDeaths = s.combatDeaths
+  const naturalDeaths = s.naturalDeaths
   const converts = s.converts
+  const events = s.events
+  const cause = s.cause
+  events.fill(EV_NONE)
+  cause.fill(0)
   s.blasts.length = 0
   s.killN = 0
   s.killSumX = 0
@@ -101,8 +127,11 @@ export function step(s: SimState): void {
     for (let x = 0; x < w; x++) {
       const i = y * w + x
       if (!inSafe(x, y)) {
-        if (cells[i] > 0) deaths[cells[i]]++
-        next[i] = 0 // the storm suppresses every ability, even the Elder's
+        if (cells[i] > 0) {
+          deaths[cells[i]]++
+          events[i] = EV_BLEACHED // the clock's doing — never anyone's cascade
+        }
+        next[i] = 0 // the bleach suppresses every ability, even the Elder's
         nextTypes[i] = 0
         continue
       }
@@ -128,6 +157,7 @@ export function step(s: SimState): void {
       const cur = cells[i]
       let out = 0
       let outType = 0
+      let lysedBy = 0 // the aggressor, when this cell dies contested
       if (cur > 0) {
         const t = CELL_TYPES[types[i]]
         const friendly = counts[cur]
@@ -137,11 +167,20 @@ export function step(s: SimState): void {
           outType = out === cur ? types[i] : 0
         } else if (!t.steadfast && enemy - friendly >= casualtyMargin) {
           out = 0 // contested and outnumbered: a casualty, not a convert
+          lysedBy = dominant(counts, nf, cur)
         } else {
           const surviveMask = t.surviveMask ?? factions[cur].rule.survive
           if ((surviveMask >> total) & 1) {
             out = cur
             outType = types[i]
+          } else if (enemy > 0) {
+            // It died to the rule — starved or smothered — but an enemy was in
+            // contact, so the enemy's cells are part of the neighbourhood that
+            // killed it. THIS is how a Life attack actually works: you don't
+            // stab a cell, you crowd it. Crediting it is what lets a glider
+            // dropped into a fort read as a cascade instead of as ambient churn,
+            // while a cell starving alone in its own soup still credits nobody.
+            lysedBy = dominant(counts, nf, cur)
           }
         }
       } else if (total > 0) {
@@ -151,11 +190,28 @@ export function step(s: SimState): void {
       if (cur > 0) {
         if (out === 0) {
           deaths[cur]++
-          combatDeaths[cur]++ // in-safe path only → storm deaths never counted
-          s.killN++
-          s.killSumX += x
-          s.killSumY += y
-        } else if (out !== cur) converts[cur * nf + out]++
+          if (lysedBy > 0) {
+            // Lysed by an enemy front. ONLY this counts as combat — a cell that
+            // simply starved or smothered is the culture's own churn, and
+            // crediting it to a player would make every soup look like a cascade.
+            combatDeaths[cur]++
+            events[i] = EV_DIED_COMBAT
+            cause[i] = lysedBy
+            s.killN++
+            s.killSumX += x
+            s.killSumY += y
+          } else {
+            naturalDeaths[cur]++
+            events[i] = EV_DIED_NATURAL
+          }
+        } else if (out !== cur) {
+          converts[cur * nf + out]++
+          events[i] = EV_CONVERTED
+          cause[i] = out
+        }
+      } else if (out > 0) {
+        events[i] = EV_BORN
+        cause[i] = out
       }
       next[i] = out
       nextTypes[i] = outType
@@ -182,6 +238,8 @@ export function step(s: SimState): void {
         converts[next[j] * nf + cells[i]]++
         next[j] = cells[i]
         nextTypes[j] = 0
+        events[j] = EV_CONVERTED
+        cause[j] = cells[i]
         break
       }
     }
@@ -205,7 +263,9 @@ export function step(s: SimState): void {
         const j = yy * w + xx
         if (next[j] > 0 && next[j] !== cells[i]) {
           deaths[next[j]]++
-          combatDeaths[next[j]]++
+          combatDeaths[next[j]]++ // a detonation is unambiguously the martyr's doing
+          events[j] = EV_DIED_COMBAT
+          cause[j] = cells[i]
           s.killN++
           s.killSumX += xx
           s.killSumY += yy

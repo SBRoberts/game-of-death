@@ -12,29 +12,15 @@
 import { spawn } from 'node:child_process'
 import { availableParallelism } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { Duel, GENES, PLAYER, RIVAL, rngFrom, smartAct, type GeneChoice } from '../sim'
+import { Duel, GENES, type GeneChoice } from '../sim'
+import { POLICIES, playTurnRound } from './turnloop'
 
 const FLAG_HIGH = 65
 const FLAG_LOW = 35
 
 function runDuel(seed: string, loadout: GeneChoice[]): Duel {
   const d = new Duel(seed, {}, loadout, [])
-  d.autoRival = false
-  const pr = rngFrom(seed, 'policy-player')
-  const rr = rngFrom(seed, 'policy-rival')
-  while (d.status === 'running' && d.state.gen < 6000) {
-    d.tick()
-    if (d.state.gen % d.t.aiActEvery === 0) {
-      if ((d.state.gen / d.t.aiActEvery) % 2 === 0) {
-        smartAct(d, PLAYER, pr, RIVAL, d.t.aiSamples, d.t.aiHorizon)
-        smartAct(d, RIVAL, rr, PLAYER, d.t.aiSamples, d.t.aiHorizon)
-      } else {
-        smartAct(d, RIVAL, rr, PLAYER, d.t.aiSamples, d.t.aiHorizon)
-        smartAct(d, PLAYER, pr, RIVAL, d.t.aiSamples, d.t.aiHorizon)
-      }
-    }
-  }
-  return d
+  return playTurnRound(d, POLICIES.planner, POLICIES.planner, seed)
 }
 
 // ── child mode: compute one rung, print JSON ───────────────────────────────

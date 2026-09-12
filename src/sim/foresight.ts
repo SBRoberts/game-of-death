@@ -13,6 +13,8 @@ export interface Impact {
   gained: number[]
   /** Cell indices where another faction's future is disrupted by it. */
   destroyed: number[]
+  /** For each `destroyed` entry, the faction that would have held it. */
+  destroyedOwner: number[]
   /**
    * The subset of gained cells that have SETTLED — still yours two further
    * generations on, so still lifes and period-2 oscillators both qualify.
@@ -46,13 +48,17 @@ export function projectImpact(
   }
   const gained: number[] = []
   const destroyed: number[] = []
+  const destroyedOwner: number[] = []
   const ownLost: number[] = []
   for (let i = 0; i < base.cells.length; i++) {
     const a = base.cells[i]
     const b = alt.cells[i]
     if (b === faction && a !== faction) gained.push(i)
     else if (a === faction && b !== faction) ownLost.push(i) // your cell, killed by your own move
-    else if (a !== 0 && a !== faction && b !== a) destroyed.push(i)
+    else if (a !== 0 && a !== faction && b !== a) {
+      destroyed.push(i)
+      destroyedOwner.push(a)
+    }
   }
 
   // Stability probe: two more generations of the alt future. Gained cells
@@ -63,5 +69,5 @@ export function projectImpact(
   }
   const lasting = gained.filter((i) => alt.cells[i] === faction)
 
-  return { gained, destroyed, lasting, ownLost }
+  return { gained, destroyed, destroyedOwner, lasting, ownLost }
 }

@@ -4355,3 +4355,242 @@ canvas {
 .mount-portrait .armed-card.compact .armed-switch {
   flex-shrink: 0;
 }
+
+/* ── SETTLE: the turn's scorecard (what the incubation did; forecast → outcome) ── */
+.settle-card {
+  position: absolute;
+  /* Clears the top-centre island (round + bleach + warp) beneath it — the
+     scorecard must never sit on top of the clock it is reporting against. */
+  top: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  min-width: 380px;
+  max-width: min(680px, calc(100% - 24px));
+  padding: 10px 14px 11px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  cursor: pointer;
+  animation: settle-in 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.settle-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.settle-head .lbl-xs {
+  color: var(--you);
+}
+.settle-gens {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+.settle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13.5px;
+  color: var(--dim);
+}
+.settle-row .stat b {
+  font-weight: 700;
+  font-size: 17px;
+  margin-right: 2px;
+}
+.stat.you {
+  color: var(--you);
+}
+.stat.you.neg {
+  color: var(--storm);
+}
+.stat.rival {
+  color: var(--dim);
+}
+.stat.rival.neg {
+  color: var(--rival);
+}
+.stat.dapi {
+  color: var(--dapi);
+}
+.stat.cascade i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--dim);
+}
+.settle-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--dim);
+}
+.settle-forecast .lbl-xs {
+  color: var(--label);
+}
+.settle-forecast.dim {
+  color: var(--faint);
+}
+.settle-sep {
+  color: var(--faint);
+}
+.settle-held.exact {
+  color: var(--you);
+}
+@keyframes settle-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.compact .settle-card,
+.mount-portrait .settle-card {
+  top: 6px;
+  min-width: 0;
+  width: calc(100% - 12px);
+  max-width: none;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+.compact .settle-row .stat b,
+.mount-portrait .settle-row .stat b {
+  font-size: 15px;
+}
+
+/* ── BLEACH: the tactical clock, read as turns ── */
+.bleach-group {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.bleach-group .lbl-xs {
+  color: var(--storm);
+  letter-spacing: 0.16em;
+}
+.bleach-group.open .lbl-xs {
+  color: var(--faint);
+}
+.bleach-track {
+  flex: 1;
+  height: 3px;
+  background: var(--etch);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  min-width: 60px;
+}
+.bleach-track span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--storm);
+  opacity: 0.55;
+  transition: width 400ms linear;
+}
+.bleach-track .from-left {
+  left: 0;
+}
+.bleach-track .from-right {
+  right: 0;
+}
+.bleach-track.active span {
+  opacity: 1;
+  box-shadow: 0 0 6px var(--storm);
+}
+.bleach-val {
+  font-size: 11.5px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.bleach-val.open {
+  color: var(--faint);
+}
+
+/* ── LAB NOTES: the run read out as an experiment ── */
+.lab-notes {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  padding: 10px 22px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.45;
+}
+.lab-notes .lbl-sm {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+.lab-notes .lbl-sm .code {
+  margin-left: auto;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-weight: 400;
+}
+.lab-notes .k {
+  color: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 10.5px;
+  padding-top: 2px;
+  white-space: nowrap;
+}
+.lab-notes .v {
+  color: var(--dim);
+}
+.lab-notes .v .num {
+  color: var(--text);
+}
+.lab-notes .v .pat {
+  color: var(--you);
+  font-weight: 600;
+}
+.lab-notes .v.daily {
+  color: var(--gold);
+}
+.lab-notes .badge {
+  margin-left: 8px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  padding: 1px 6px;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+/* ── DAILY CULTURE on the title ── */
+.title-btn.daily .btn-label {
+  color: var(--gold);
+}
+
+/* ── the rival's telegraphed deploy ── */
+.tickers .lysed {
+  color: var(--rival);
+  animation: stat-bump 260ms ease-out;
+}
+.tickers .assim {
+  color: var(--dapi);
+  animation: stat-bump 260ms ease-out;
+}
+.tickers .lbl-xs {
+  margin-right: 4px;
+}

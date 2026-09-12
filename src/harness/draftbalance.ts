@@ -14,17 +14,16 @@
 import {
   Duel,
   DRAFT_GENES,
-  PLAYER,
-  RIVAL,
   ROUNDS,
   geneByKey,
   geneChoiceWarp,
   normalizeChoice,
   rngFrom,
-  smartAct,
+  TUNING,
   type GeneChoice,
   type Rng,
 } from '../sim'
+import { plannerAt, playTurnRound } from './turnloop'
 
 const FLAG_HIGH = 65
 const FLAG_LOW = 35
@@ -73,7 +72,7 @@ function playRound(
 ): boolean {
   const d = new Duel(
     seed,
-    { aiSamples: round.aiSamples, aiActEvery: round.aiActEvery },
+    { aiSamples: round.aiSamples, rivalActs: round.rivalActs, bleachFromTurn: round.bleachFromTurn, bleachPerTurn: round.bleachPerTurn },
     [],
     round.rivalLoadout,
     'soup',
@@ -82,29 +81,20 @@ function playRound(
   d.warpCap = round.warpCap
   d.runLoadout = [...build]
   d.rebuildPlayer()
-  d.autoRival = false
-  const pr = rngFrom(seed, 'pp')
-  const rr = rngFrom(seed, 'pr')
-  while (d.status === 'running' && d.state.gen < 6000) {
-    d.tick()
-    if (d.state.gen % d.t.aiActEvery === 0) {
-      if ((d.state.gen / d.t.aiActEvery) % 2 === 0) {
-        smartAct(d, PLAYER, pr, RIVAL, d.t.aiSamples, d.t.aiHorizon)
-        smartAct(d, RIVAL, rr, PLAYER, d.t.aiSamples, d.t.aiHorizon)
-      } else {
-        smartAct(d, RIVAL, rr, PLAYER, d.t.aiSamples, d.t.aiHorizon)
-        smartAct(d, PLAYER, pr, RIVAL, d.t.aiSamples, d.t.aiHorizon)
-      }
-    }
-  }
+  // The player's depth is fixed; the round's aiSamples is the RIVAL's, or the
+  // boss would hand the player its own brain and cancel its difficulty out.
+  playTurnRound(d, plannerAt(TUNING.aiSamples), plannerAt(round.aiSamples), seed, {
+    rivalActs: round.rivalActs,
+    order: 'rivalFirst',
+  })
   return d.status === 'won'
 }
 
-/** Play a full gauntlet under a policy; returns [clearedRound1, r2, r3]. */
+/** Play a full gauntlet under a policy; returns cleared[] per round. */
 function playGauntlet(seed: string, policy: Policy, focusKey: string): boolean[] {
   const build: GeneChoice[] = []
   const rng = rngFrom(seed, 'draft')
-  const cleared = [false, false, false]
+  const cleared = ROUNDS.map(() => false)
   for (let r = 0; r < ROUNDS.length; r++) {
     draft(policy, build, PICKS_PER_ROUND, rng, focusKey) // draft before the round
     if (!playRound(`${seed}-r${r + 1}`, build, ROUNDS[r])) break
@@ -118,12 +108,13 @@ const policies: Policy[] = ['pure', 'average', 'rare', 'focused']
 const focusKey = 'vampire' // the "focused build" archetype
 
 console.log(`draft-sequence balance: ${n} gauntlets × ${policies.length} policies\n`)
-console.log('policy'.padEnd(10), 'R1'.padStart(6), 'R2'.padStart(6), 'R3(clear)'.padStart(11))
+const last = ROUNDS.length - 1
+console.log('policy'.padEnd(10), ...ROUNDS.map((_, r) => (r === last ? `R${r + 1}(clear)` : `R${r + 1}`).padStart(r === last ? 11 : 6)))
 for (const policy of policies) {
-  const tally = [0, 0, 0]
+  const tally = ROUNDS.map(() => 0)
   for (let i = 0; i < n; i++) {
     const c = playGauntlet(`draft-${i}`, policy, focusKey)
-    for (let r = 0; r < 3; r++) if (c[r]) tally[r]++
+    for (let r = 0; r < ROUNDS.length; r++) if (c[r]) tally[r]++
   }
   const pct = (x: number) => `${Math.round((x / n) * 100)}%`
   const flag = (x: number) => {
@@ -132,9 +123,7 @@ for (const policy of policies) {
   }
   console.log(
     (policy === 'focused' ? `focus:${focusKey.slice(0, 4)}` : policy).padEnd(10),
-    pct(tally[0]).padStart(6),
-    pct(tally[1]).padStart(6),
-    (pct(tally[2]) + flag(tally[2])).padStart(11),
+    ...tally.map((t, r) => (r === last ? (pct(t) + flag(t)).padStart(11) : pct(t).padStart(6))),
   )
 }
 console.log(

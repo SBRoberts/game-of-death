@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { sfx } from './audio'
 import type { AshRow } from './meta'
 import { TIER_COLORS } from './render'
+import { bestPattern, type ExperimentLog } from './runlog'
+import { describeDaily, type DailyBest } from './daily'
 
 interface CashOutProps {
   breakdown: { rows: AshRow[]; total: number }
   bank: number
-  /** Header meta, e.g. "240 generations · the neighbor". */
+  /** Header meta, e.g. "8 turns · 128 generations · the neighbor". */
   meta: string
   /** This run's biggest cascade (peak chain ×N); 0 if none banked. */
   peak: number
@@ -20,6 +22,11 @@ interface CashOutProps {
   seed: string
   /** True when the round was lost — suppresses win-flavored carrot copy. */
   lost?: boolean
+  /** The run so far, as a recordable experiment. */
+  experiment: ExperimentLog
+  /** When this run is the day's shared seed: the date, the standing record,
+   *  whether THIS run took it, and this run's own readout. */
+  daily: { date: string; best: DailyBest | null; newBest: boolean; result: DailyBest } | null
   onGenome: () => void
   primary: { label: string; onClick: () => void }
 }
@@ -27,8 +34,9 @@ interface CashOutProps {
 /**
  * The ash ledger (HANDOFF §5.4): an engraved plate — grooved rows landing one
  * by one with ticks, the total pulled out, the two actions welded to the bottom
- * edge. The fun pass adds a highlight-reel header (your peak cascade, with a
- * NEW BEST stamp) and a next-unlock carrot, so the ledger reads as a payoff.
+ * edge. Above the ledger: the highlight reel (peak cascade, records) and the
+ * LAB NOTES — the run read out as an experiment: what you engineered, how
+ * honest your forecasts were, which pattern did the causing, the run code.
  */
 export function CashOut({
   breakdown,
@@ -40,6 +48,8 @@ export function CashOut({
   nextUnlock,
   seed,
   lost,
+  experiment,
+  daily,
   onGenome,
   primary,
 }: CashOutProps) {
@@ -62,8 +72,8 @@ export function CashOut({
   // The NEW BEST flourish lands once the reel has finished counting.
   const done = revealed >= rows.length
   useEffect(() => {
-    if (done && newBest && peak > 0) sfx.play('newbest')
-  }, [done, newBest, peak])
+    if (done && ((newBest && peak > 0) || daily?.newBest)) sfx.play('newbest')
+  }, [done, newBest, peak, daily?.newBest])
 
   const running = rows.slice(0, revealed).reduce((a, r) => a + r.value, 0)
 
@@ -77,6 +87,10 @@ export function CashOut({
       /* clipboard blocked */
     }
   }
+
+  const x = experiment
+  const top = bestPattern(x)
+  const honesty = x.forecastCells > 0 ? Math.round((100 * x.forecastHeld) / x.forecastCells) : null
 
   return (
     <div className="plate" role="group" aria-label="ash ledger">
@@ -92,6 +106,69 @@ export function CashOut({
           {!newBest && newFrontier && <span className="reel-badge frontier">NEW FRONTIER</span>}
         </div>
       )}
+      <div className="lab-notes" aria-label="lab notes">
+        <span className="lbl-sm">
+          LAB NOTES{x.rounds > 1 ? ` · ${x.rounds} ROUNDS` : ''}
+          <span className="code">run code {seed}</span>
+        </span>
+        <span className="k">engineered</span>
+        <span className="v">
+          <span className="num">{x.cascades}</span> cascade{x.cascades === 1 ? '' : 's'}
+          {x.cascades > 0 && (
+            <>
+              {' '}· longest <span className="num">{x.longest}</span> gens · peak <span className="num">×{Math.round(x.peak)}</span>
+            </>
+          )}
+        </span>
+        <span className="k">culture</span>
+        <span className="v">
+          <span className="num">{x.radicals}</span> radical cells assimilated · <span className="num">{x.rivalLysed.toLocaleString()}</span> rival
+          lysed
+          {x.rivalTurned > 0 && (
+            <>
+              {' '}· <span className="num">{x.rivalTurned}</span> turned
+            </>
+          )}
+        </span>
+        <span className="k">forecast</span>
+        <span className="v">
+          {honesty === null ? (
+            'no placements graded'
+          ) : (
+            <>
+              held <span className="num">{honesty}%</span> of what the ghost promised ({x.forecastHeld}/{x.forecastCells} cells) over{' '}
+              <span className="num">{x.placements}</span> placement{x.placements === 1 ? '' : 's'}
+            </>
+          )}
+        </span>
+        <span className="k">caused most</span>
+        <span className="v">
+          {top && top.chain > 0 ? (
+            <>
+              <span className="pat">{top.name}</span> — {top.cascades} cascade{top.cascades === 1 ? '' : 's'}, ×{Math.round(top.chain)} over {top.plays} play{top.plays === 1 ? '' : 's'}
+            </>
+          ) : top ? (
+            <>
+              nothing cascaded yet — <span className="pat">{top.name}</span> was played most ({top.plays})
+            </>
+          ) : (
+            'nothing placed'
+          )}
+        </span>
+        {daily && (
+          <>
+            <span className="k">daily</span>
+            <span className="v daily">
+              culture {daily.date} · this run {describeDaily(daily.result)}
+              {daily.newBest ? (
+                <span className="badge">NEW DAILY BEST</span>
+              ) : daily.best ? (
+                <> · best {describeDaily(daily.best)}</>
+              ) : null}
+            </span>
+          </>
+        )}
+      </div>
       <div className="plate-rows">
         {rows.slice(0, revealed).map((r) => (
           <div

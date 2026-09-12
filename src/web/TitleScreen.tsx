@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { sfx } from './audio'
+import { describeDaily, type DailyBest } from './daily'
 
 /**
  * The title screen — "FIRST LIGHT".
@@ -61,9 +62,13 @@ function bakeSprite(color: readonly number[], px: number): HTMLCanvasElement {
 interface TitleScreenProps {
   onStart: () => void
   onHowTo: () => void
+  /** DAILY CULTURE: today's shared seed, its date label, and your standing record. */
+  onDaily: () => void
+  dailyDate: string
+  dailyBest: DailyBest | null
 }
 
-export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
+export function TitleScreen({ onStart, onHowTo, onDaily, dailyDate, dailyBest }: TitleScreenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [muted, setMuted] = useState(sfx.muted)
   const bootRef = useRef(false) // audio armed on first gesture
@@ -491,17 +496,24 @@ export function TitleScreen({ onStart, onHowTo }: TitleScreenProps) {
       </div>
 
       <div className="title-console">
-        <div className="title-tagline">Your colony must evolve to overcome its foes.</div>
+        <div className="title-tagline">See the future of a living culture. Then make it happen.</div>
         <div className="title-actions">
           <button className="title-btn primary" onClick={onStart} autoFocus>
             <span className="btn-label">START</span>
             <span className="btn-sub">▸ collect specimen</span>
           </button>
+          <button className="title-btn daily" onClick={onDaily}>
+            <span className="btn-label">DAILY CULTURE</span>
+            <span className="btn-sub">
+              {dailyDate}
+              {dailyBest ? ` · best ${describeDaily(dailyBest)}` : ' · one slide, everyone'}
+            </span>
+          </button>
           <button className="title-btn" onClick={onHowTo}>
             <span className="btn-label">HOW TO PLAY</span>
           </button>
         </div>
-        <div className="title-foot">a roguelike duel on Conway's Game of Life — cause of death: pending</div>
+        <div className="title-foot">a tactical duel on Conway's Game of Life — cause of death: pending</div>
       </div>
 
       <button

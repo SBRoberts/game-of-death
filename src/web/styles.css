@@ -4594,3 +4594,145 @@ canvas {
 .tickers .lbl-xs {
   margin-right: 4px;
 }
+
+
+/* ══ PLAYABILITY: reachability at every viewport ══════════════════════════
+   Audited across 7 viewport sizes × 7 surfaces (see the audit driver in the
+   session scratchpad). Two of these were hard blockers: on a landscape phone
+   the cash-out's CONTINUE button sat below the fold with nothing scrolling, so
+   a finished round could not be left; and on a portrait phone the title's
+   action row overflowed horizontally, so the game could not be started. The
+   rule here is simple — every control must be reachable, by scrolling if
+   necessary, at any size the game renders at. */
+
+/* The round-end overlay scrolls. It centres its contents when they fit (the
+   auto margins) and becomes a normal scroller when they don't, so the ash
+   ledger's actions are always reachable instead of being clipped off the top
+   by `justify-content: center`. */
+.overlay {
+  justify-content: flex-start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  gap: 20px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.overlay > * {
+  flex-shrink: 0;
+}
+.overlay .verdict-block {
+  margin-top: auto;
+}
+.overlay .plate {
+  margin-bottom: auto;
+}
+/* Short viewports: trade ornament for reachability so there is less to scroll. */
+@media (max-height: 620px) {
+  .overlay {
+    gap: 12px;
+    padding: 10px;
+  }
+  .overlay .verdict {
+    font-size: clamp(20px, 3vw, 28px);
+  }
+  .lab-notes,
+  .plate-head,
+  .reel-head {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .plate-row {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+}
+
+/* The title console: its actions wrap instead of running off a narrow screen,
+   and the console itself scrolls rather than clipping on a short one. */
+.title-console {
+  max-width: min(calc(100vw - 24px), 760px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.title-actions {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.title-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+@media (max-width: 560px), (max-height: 560px) {
+  .title-console {
+    bottom: max(12px, 2vh);
+    gap: 10px;
+    padding: 14px 16px 12px;
+  }
+  .title-actions {
+    gap: 8px;
+    width: 100%;
+  }
+  .title-btn {
+    padding: 12px 16px;
+    letter-spacing: 0.14em;
+  }
+  .title-tagline {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+  }
+}
+
+/* The rail scrolls internally, so its utility row (mute / settings / new run)
+   stays reachable on a short window instead of being cut off by the stage. */
+.rail {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+}
+
+/* The how-to's pinned START must never be squeezed below its own text — the
+   flex column was shrinking it ~8px on short screens, clipping the label. */
+.howto-start {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+/* Touch targets. 24px is the floor for a pointer, 44px for a finger. */
+.howto-head .close,
+.settings-head .close,
+.gene-header .close,
+.lab-head .close {
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chest-pill {
+  min-height: 34px;
+}
+.chest-defer {
+  min-height: 32px;
+  padding: 6px 14px;
+  border-radius: 6px;
+}
+@media (pointer: coarse) {
+  .howto-head .close,
+  .settings-head .close,
+  .gene-header .close,
+  .lab-head .close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .chest-pill {
+    min-height: 44px;
+  }
+  .chest-defer {
+    min-height: 44px;
+  }
+  .utility-row button {
+    height: 44px;
+  }
+}

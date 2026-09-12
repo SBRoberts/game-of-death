@@ -25,8 +25,12 @@ import {
 } from '../sim'
 import { plannerAt, playTurnRound } from './turnloop'
 
-const FLAG_HIGH = 65
-const FLAG_LOW = 35
+// Bands apply to the CONDITIONAL per-round winrate — P(clear round N | reached
+// it) — not to the cumulative clear. Over a 6-round gauntlet a healthy 80%
+// per round compounds to a ~26% full clear, so judging the final column against
+// a per-round band would flag a perfectly good curve as broken.
+const FLAG_HIGH = 75
+const FLAG_LOW = 40
 const PICKS_PER_ROUND = 4 // ~chests + a shop buy or two
 
 type Policy = 'pure' | 'average' | 'rare' | 'focused'
@@ -109,23 +113,38 @@ const focusKey = 'vampire' // the "focused build" archetype
 
 console.log(`draft-sequence balance: ${n} gauntlets × ${policies.length} policies\n`)
 const last = ROUNDS.length - 1
-console.log('policy'.padEnd(10), ...ROUNDS.map((_, r) => (r === last ? `R${r + 1}(clear)` : `R${r + 1}`).padStart(r === last ? 11 : 6)))
+const head = ROUNDS.map((_, r) => `R${r + 1}`.padStart(8)).join('')
+console.log('policy'.padEnd(10) + head + '   clear')
 for (const policy of policies) {
+  const reached = ROUNDS.map(() => 0)
   const tally = ROUNDS.map(() => 0)
   for (let i = 0; i < n; i++) {
     const c = playGauntlet(`draft-${i}`, policy, focusKey)
-    for (let r = 0; r < ROUNDS.length; r++) if (c[r]) tally[r]++
+    for (let r = 0; r < ROUNDS.length; r++) {
+      // You only attempt a round if you cleared the one before it.
+      if (r === 0 || c[r - 1]) reached[r]++
+      if (c[r]) tally[r]++
+    }
   }
-  const pct = (x: number) => `${Math.round((x / n) * 100)}%`
-  const flag = (x: number) => {
-    const p = (x / n) * 100
-    return p > FLAG_HIGH ? ' ⚠HIGH' : p < FLAG_LOW ? ' ·low' : ''
-  }
+  // Conditional: of the runs that GOT here, how many got through?
+  const cond = tally.map((t, r) => (reached[r] ? (100 * t) / reached[r] : NaN))
+  // Show the denominator: few runs reach the late rounds, so a bare "100%" off
+  // three samples is noise that someone will otherwise tune against.
+  const cells = cond.map((p, r) => {
+    if (Number.isNaN(p) || reached[r] === 0) return '       —'
+    const flag = reached[r] < 8 ? '?' : p > FLAG_HIGH ? '^' : p < FLAG_LOW ? 'v' : ' '
+    return `${Math.round(p)}%${flag}/${reached[r]}`.padStart(8)
+  })
+  const clear = Math.round((100 * tally[last]) / n)
   console.log(
-    (policy === 'focused' ? `focus:${focusKey.slice(0, 4)}` : policy).padEnd(10),
-    ...tally.map((t, r) => (r === last ? (pct(t) + flag(t)).padStart(11) : pct(t).padStart(6))),
+    (policy === 'focused' ? `focus:${focusKey.slice(0, 4)}` : policy).padEnd(10) +
+      cells.join('') +
+      `${String(clear).padStart(7)}%`,
   )
 }
 console.log(
-  '\nHealthy: pure clears rarely, average lands in the 35–65 band, rare/focus may exceed (it resets each run).',
+  `\nPer-round cells are CONDITIONAL: pct/n where n = runs that reached it.` +
+    `\n^ above ${FLAG_HIGH}%, v below ${FLAG_LOW}%, ? = fewer than 8 runs reached it (noise, do not tune on it).` +
+    `\n"clear" is the cumulative full-gauntlet rate — ${ROUNDS.length} rounds compound, so ~25% there is a` +
+    `\nhealthy average build, not a broken one. Want: pure struggles, average sits in the band.`,
 )

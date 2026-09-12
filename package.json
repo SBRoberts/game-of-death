@@ -10,12 +10,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "harness": "tsx src/harness/selfplay.ts",
+    "harness": "tsx src/harness/turnbalance.ts",
     "balance": "tsx src/harness/genebalance.ts",
     "draftbalance": "tsx src/harness/draftbalance.ts",
-    "turnbalance": "tsx src/harness/turnbalance.ts",
     "classify": "tsx src/harness/classify.ts",
-    "gauntlet": "tsx src/harness/gauntlet.ts"
+    "gauntlet": "tsx src/harness/gauntlet.ts",
+    "arena": "tsx src/harness/arena.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

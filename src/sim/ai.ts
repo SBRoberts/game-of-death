@@ -14,8 +14,18 @@ import { pickInt, type Rng } from './rng'
 
 /**
  * One evaluation for placements, shared by the planner AI and the UI's
- * placement hint: disrupting the target's future counts most, growth counts
- * some, and the biomass cost is a tax. Positive means worth playing.
+ * placement hint — so the grade you read is the grade the rival plays by.
+ *
+ * It scores the NET TERRITORY SWING a placement causes, because that is what
+ * actually decides a round: cells that SETTLE into a stable nucleus are the
+ * prize, mere churn is discounted heavily, a rival cell removed is worth about
+ * as much as a cell gained, and your own losses count fully against you.
+ *
+ * The weights are measured, not guessed: an earlier version priced disruption
+ * at 3× a gain and counted raw churn as growth, which let a deeper search win
+ * the fight and lose the count — the skill gradient flattened out past a
+ * shallow search. Under these weights a deeper planner reliably beats a
+ * shallower one (src/harness/turnbalance.ts), which is the game's core claim.
  */
 export function impactScore(
   cells: Uint8Array,
@@ -23,13 +33,19 @@ export function impactScore(
   target: number,
   cost: number,
 ): number {
-  let score = -cost * 0.4
-  for (const i of impact.destroyed) score += cells[i] === target ? 3 : 0.5
-  score += impact.gained.length * 0.4
-  // Own cells this placement smothers are a real cost — value them a shade
-  // above a gain so the planner won't crowd its own frontier to death. A
-  // deliberate sacrifice (martyr, vampire) still wins on its enemy kills.
-  score -= impact.ownLost.length * 0.5
+  void cells // ownership of a disrupted future comes from the projection, not the live board
+  let score = -cost * 0.35
+  // Whose future was disrupted: destroyedOwner[k] is who WOULD have held the
+  // cell, which is the honest question — the live board may not hold it yet.
+  impact.destroyed.forEach((_, k) => {
+    score += impact.destroyedOwner[k] === target ? 1.0 : 0.2
+  })
+  // A settled nucleus is the thing worth buying; the rest is churn that burns out.
+  score += impact.lasting.length * 1.3
+  score += Math.max(0, impact.gained.length - impact.lasting.length) * 0.15
+  // Own cells this placement smothers cost exactly what they are worth. A
+  // deliberate sacrifice (martyr, vampire) still wins on the enemy cells it takes.
+  score -= impact.ownLost.length * 1.0
   return score
 }
 
@@ -77,12 +93,18 @@ function aimRot(dir: readonly [number, number], tx: number, ty: number): number 
   return best
 }
 
-export function aiAct(duel: Duel, faction: number, rng: Rng, target: number): void {
+/** What a policy placed, so a driver can telegraph it on the slide. */
+export interface Placed {
+  patternId: string
+  cells: Array<[number, number]>
+}
+
+export function aiAct(duel: Duel, faction: number, rng: Rng, target: number): Placed | null {
   const affordable = duel.poolFor(faction).filter((p) => p.cost <= duel.biomass[faction])
-  if (affordable.length === 0) return
+  if (affordable.length === 0) return null
   const pattern = affordable[pickInt(rng, affordable.length)]
   const { own, cx, cy } = scan(duel, faction, target)
-  if (own.length === 0) return
+  if (own.length === 0) return null
   const w = duel.state.cfg.width
 
   for (let attempt = 0; attempt < 12; attempt++) {
@@ -94,31 +116,45 @@ export function aiAct(duel: Duel, faction: number, rng: Rng, target: number): vo
     const ox = ax + dx * 3 + pickInt(rng, 9) - 4
     const oy = ay + dy * 3 + pickInt(rng, 9) - 4
     const rot = pickInt(rng, 4)
-    if (duel.tryPlace(faction, pattern.id, ox, oy, rot)) return
+    if (duel.tryPlace(faction, pattern.id, ox, oy, rot)) {
+      return { patternId: pattern.id, cells: duel.patternCells(pattern, ox, oy, rot) }
+    }
   }
+  return null
+}
+
+export interface Plan {
+  pattern: Pattern
+  ox: number
+  oy: number
+  rot: number
+  score: number
 }
 
 /**
- * Sample candidate placements, Foresight-score each, play the best one.
- * Scoring favors disrupting the target's future over land-grabbing, and a
- * candidate must beat a do-nothing baseline of 0 or the biomass is saved.
+ * The planner's evaluation without the commit: sample candidate placements
+ * from `candidates` (default: the faction's whole affordable pool), Foresight-
+ * score each, and return the best — or null when nothing beats doing nothing.
+ * smartAct() commits it via tryPlace; a driver that wants the placement on the
+ * player's record (forecast + attribution) can commit the plan via playCard.
  */
-export function smartAct(
+export function planBest(
   duel: Duel,
   faction: number,
   rng: Rng,
   target: number,
   samples: number,
   horizon: number,
-): void {
-  const affordable = duel.poolFor(faction).filter((p) => p.cost <= duel.biomass[faction])
-  if (affordable.length === 0) return
+  candidates: readonly Pattern[] = duel.poolFor(faction),
+): Plan | null {
+  const affordable = candidates.filter((p) => p.cost <= duel.biomass[faction])
+  if (affordable.length === 0) return null
   const { own, cx, cy } = scan(duel, faction, target)
-  if (own.length === 0) return
+  if (own.length === 0) return null
   const s = duel.state
   const w = s.cfg.width
 
-  let best: { pattern: Pattern; ox: number; oy: number; rot: number; score: number } | null = null
+  let best: Plan | null = null
   for (let k = 0; k < samples; k++) {
     const pattern = affordable[pickInt(rng, affordable.length)]
     const anchor = own[pickInt(rng, own.length)]
@@ -145,7 +181,24 @@ export function smartAct(
     const score = impactScore(s.cells, impact, target, pattern.cost)
     if (!best || score > best.score) best = { pattern, ox, oy, rot, score }
   }
-  if (best && best.score > 0) {
-    duel.tryPlace(faction, best.pattern.id, best.ox, best.oy, best.rot)
-  }
+  return best && best.score > 0 ? best : null
+}
+
+/**
+ * Sample candidate placements, Foresight-score each, play the best one.
+ * Scoring favors disrupting the target's future over land-grabbing, and a
+ * candidate must beat a do-nothing baseline of 0 or the biomass is saved.
+ */
+export function smartAct(
+  duel: Duel,
+  faction: number,
+  rng: Rng,
+  target: number,
+  samples: number,
+  horizon: number,
+): Placed | null {
+  const best = planBest(duel, faction, rng, target, samples, horizon)
+  if (!best) return null
+  if (!duel.tryPlace(faction, best.pattern.id, best.ox, best.oy, best.rot)) return null
+  return { patternId: best.pattern.id, cells: duel.patternCells(best.pattern, best.ox, best.oy, best.rot) }
 }

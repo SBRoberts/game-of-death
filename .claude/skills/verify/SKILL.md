@@ -90,3 +90,33 @@ to localStorage (e.g. `{"ash":300,"slots":0,"owned":[],"equipped":[]}`).
 - After sim-rule changes also run `npm run harness` and sanity-check the
   self-play winrate (~50% ± noise for mirrored policies) and the determinism
   audit line.
+
+
+## Reachability audit (run after ANY layout or overlay change)
+
+`reachability-audit.mjs` in this folder drives every surface (title, how-to,
+duel, genome, settings, chest, cash-out, shop) at seven viewport sizes and
+reports anything a player could not get to. It has already caught two hard
+blockers: the cash-out's continue button sitting below the fold on a landscape
+phone with nothing scrolling (a finished round could not be left), and the
+title's action row overflowing a portrait phone (the game could not be started).
+
+```bash
+mkdir -p /tmp/god-driver && cd /tmp/god-driver && npm init -y && npm i puppeteer-core
+npm run dev &        # from the repo
+mkdir -p /tmp/god-shots
+OUT=/tmp/god-shots node .claude/skills/verify/reachability-audit.mjs
+```
+
+It classifies findings so the report is actionable rather than noisy:
+
+- **UNREACHABLE** — an interactive control outside the viewport with no
+  scrollable ancestor. Always a bug.
+- **CLIPPED** — content cut off with nothing scrolling. Only reported when the
+  hidden content is interactive or text-bearing; oversized decorative layers
+  under `overflow: hidden` (grain, vignette, scanlines) are doing their job.
+- **needs-scroll** — below the fold but scrollable to. Fine, reported as a count.
+- **TINY** — a target under 24px. 24px is the pointer floor, 44px for touch.
+
+**Want: `HARD FAILURES: 0`.** Screenshots of any failing combination land in
+`$OUT`. Add a size to `SIZES` or a surface to `open` when either grows.

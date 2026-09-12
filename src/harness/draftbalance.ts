@@ -14,20 +14,23 @@
 import {
   Duel,
   DRAFT_GENES,
-  PLAYER,
-  RIVAL,
   ROUNDS,
   geneByKey,
   geneChoiceWarp,
   normalizeChoice,
   rngFrom,
-  smartAct,
+  TUNING,
   type GeneChoice,
   type Rng,
 } from '../sim'
+import { plannerAt, playTurnRound } from './turnloop'
 
-const FLAG_HIGH = 65
-const FLAG_LOW = 35
+// Bands apply to the CONDITIONAL per-round winrate — P(clear round N | reached
+// it) — not to the cumulative clear. Over a 6-round gauntlet a healthy 80%
+// per round compounds to a ~26% full clear, so judging the final column against
+// a per-round band would flag a perfectly good curve as broken.
+const FLAG_HIGH = 75
+const FLAG_LOW = 40
 const PICKS_PER_ROUND = 4 // ~chests + a shop buy or two
 
 type Policy = 'pure' | 'average' | 'rare' | 'focused'
@@ -73,7 +76,7 @@ function playRound(
 ): boolean {
   const d = new Duel(
     seed,
-    { aiSamples: round.aiSamples, aiActEvery: round.aiActEvery },
+    { aiSamples: round.aiSamples, rivalActs: round.rivalActs, bleachFromTurn: round.bleachFromTurn, bleachPerTurn: round.bleachPerTurn },
     [],
     round.rivalLoadout,
     'soup',
@@ -82,29 +85,20 @@ function playRound(
   d.warpCap = round.warpCap
   d.runLoadout = [...build]
   d.rebuildPlayer()
-  d.autoRival = false
-  const pr = rngFrom(seed, 'pp')
-  const rr = rngFrom(seed, 'pr')
-  while (d.status === 'running' && d.state.gen < 6000) {
-    d.tick()
-    if (d.state.gen % d.t.aiActEvery === 0) {
-      if ((d.state.gen / d.t.aiActEvery) % 2 === 0) {
-        smartAct(d, PLAYER, pr, RIVAL, d.t.aiSamples, d.t.aiHorizon)
-        smartAct(d, RIVAL, rr, PLAYER, d.t.aiSamples, d.t.aiHorizon)
-      } else {
-        smartAct(d, RIVAL, rr, PLAYER, d.t.aiSamples, d.t.aiHorizon)
-        smartAct(d, PLAYER, pr, RIVAL, d.t.aiSamples, d.t.aiHorizon)
-      }
-    }
-  }
+  // The player's depth is fixed; the round's aiSamples is the RIVAL's, or the
+  // boss would hand the player its own brain and cancel its difficulty out.
+  playTurnRound(d, plannerAt(TUNING.aiSamples), plannerAt(round.aiSamples), seed, {
+    rivalActs: round.rivalActs,
+    order: 'rivalFirst',
+  })
   return d.status === 'won'
 }
 
-/** Play a full gauntlet under a policy; returns [clearedRound1, r2, r3]. */
+/** Play a full gauntlet under a policy; returns cleared[] per round. */
 function playGauntlet(seed: string, policy: Policy, focusKey: string): boolean[] {
   const build: GeneChoice[] = []
   const rng = rngFrom(seed, 'draft')
-  const cleared = [false, false, false]
+  const cleared = ROUNDS.map(() => false)
   for (let r = 0; r < ROUNDS.length; r++) {
     draft(policy, build, PICKS_PER_ROUND, rng, focusKey) // draft before the round
     if (!playRound(`${seed}-r${r + 1}`, build, ROUNDS[r])) break
@@ -118,25 +112,39 @@ const policies: Policy[] = ['pure', 'average', 'rare', 'focused']
 const focusKey = 'vampire' // the "focused build" archetype
 
 console.log(`draft-sequence balance: ${n} gauntlets × ${policies.length} policies\n`)
-console.log('policy'.padEnd(10), 'R1'.padStart(6), 'R2'.padStart(6), 'R3(clear)'.padStart(11))
+const last = ROUNDS.length - 1
+const head = ROUNDS.map((_, r) => `R${r + 1}`.padStart(8)).join('')
+console.log('policy'.padEnd(10) + head + '   clear')
 for (const policy of policies) {
-  const tally = [0, 0, 0]
+  const reached = ROUNDS.map(() => 0)
+  const tally = ROUNDS.map(() => 0)
   for (let i = 0; i < n; i++) {
     const c = playGauntlet(`draft-${i}`, policy, focusKey)
-    for (let r = 0; r < 3; r++) if (c[r]) tally[r]++
+    for (let r = 0; r < ROUNDS.length; r++) {
+      // You only attempt a round if you cleared the one before it.
+      if (r === 0 || c[r - 1]) reached[r]++
+      if (c[r]) tally[r]++
+    }
   }
-  const pct = (x: number) => `${Math.round((x / n) * 100)}%`
-  const flag = (x: number) => {
-    const p = (x / n) * 100
-    return p > FLAG_HIGH ? ' ⚠HIGH' : p < FLAG_LOW ? ' ·low' : ''
-  }
+  // Conditional: of the runs that GOT here, how many got through?
+  const cond = tally.map((t, r) => (reached[r] ? (100 * t) / reached[r] : NaN))
+  // Show the denominator: few runs reach the late rounds, so a bare "100%" off
+  // three samples is noise that someone will otherwise tune against.
+  const cells = cond.map((p, r) => {
+    if (Number.isNaN(p) || reached[r] === 0) return '       —'
+    const flag = reached[r] < 8 ? '?' : p > FLAG_HIGH ? '^' : p < FLAG_LOW ? 'v' : ' '
+    return `${Math.round(p)}%${flag}/${reached[r]}`.padStart(8)
+  })
+  const clear = Math.round((100 * tally[last]) / n)
   console.log(
-    (policy === 'focused' ? `focus:${focusKey.slice(0, 4)}` : policy).padEnd(10),
-    pct(tally[0]).padStart(6),
-    pct(tally[1]).padStart(6),
-    (pct(tally[2]) + flag(tally[2])).padStart(11),
+    (policy === 'focused' ? `focus:${focusKey.slice(0, 4)}` : policy).padEnd(10) +
+      cells.join('') +
+      `${String(clear).padStart(7)}%`,
   )
 }
 console.log(
-  '\nHealthy: pure clears rarely, average lands in the 35–65 band, rare/focus may exceed (it resets each run).',
+  `\nPer-round cells are CONDITIONAL: pct/n where n = runs that reached it.` +
+    `\n^ above ${FLAG_HIGH}%, v below ${FLAG_LOW}%, ? = fewer than 8 runs reached it (noise, do not tune on it).` +
+    `\n"clear" is the cumulative full-gauntlet rate — ${ROUNDS.length} rounds compound, so ~25% there is a` +
+    `\nhealthy average build, not a broken one. Want: pure struggles, average sits in the band.`,
 )

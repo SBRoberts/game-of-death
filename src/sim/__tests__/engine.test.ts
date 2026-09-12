@@ -368,27 +368,33 @@ describe('duel: determinism', () => {
 })
 
 describe('duel: launch clearance', () => {
+  // Geometry is derived from the tuning, never hardcoded — the arena is sized
+  // for the turn model and gets re-swept (src/harness/arena.ts) when it changes.
+  const colony = (d: Duel) => [Math.round(d.t.width * d.t.colonyX), Math.floor(d.t.height / 2)] as const
+
   it('travelers need open ground; fortifications can sit snug', () => {
-    // Solid colony disc at (28,40) radius 3 for deterministic geometry.
+    // Solid colony disc at the colony origin, radius 3, for deterministic geometry.
     const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, radicalsCount: 0 })
+    const [cx, cy] = colony(d)
     const glider = patternById('glider')
-    const block = d.patternCells(patternById('block'), 33, 40, 0)
+    const block = d.patternCells(patternById('block'), cx + 5, cy, 0)
     expect(d.canPlace(1, block, 0)).toBe(true)
-    const snug = d.patternCells(glider, 32, 39, 0) // 1 cell off the colony edge
+    const snug = d.patternCells(glider, cx + 4, cy - 1, 0) // 1 cell off the colony edge
     expect(d.canPlace(1, snug, glider.clearance)).toBe(false)
-    const clear = d.patternCells(glider, 35, 38, 0) // open ground, in influence
+    const clear = d.patternCells(glider, cx + 7, cy - 2, 0) // open ground, in influence
     expect(d.canPlace(1, clear, glider.clearance)).toBe(true)
   })
 
   it('names the rejection reason', () => {
     const d = new Duel('clearance-test', { seedDensity: 1, seedBlobRadius: 3, radicalsCount: 0 })
+    const [cx, cy] = colony(d)
     const glider = patternById('glider')
     const block = patternById('block')
-    const onColony = d.patternCells(block, 27, 40, 0)
+    const onColony = d.patternCells(block, cx - 1, cy, 0)
     expect(d.placeProblem(1, onColony, 0)).toBe('occupied')
     const farCorner = d.patternCells(block, d.t.width - 6, 3, 0)
     expect(d.placeProblem(1, farCorner, 0)).toBe('far')
-    const snug = d.patternCells(glider, 32, 39, 0)
+    const snug = d.patternCells(glider, cx + 4, cy - 1, 0)
     expect(d.placeProblem(1, snug, glider.clearance)).toBe('blocked')
   })
 })

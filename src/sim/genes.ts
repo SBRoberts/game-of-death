@@ -110,7 +110,7 @@ export const GENES: readonly Gene[] = [
     name: 'Vampire',
     kind: 'card',
     levels: [
-      { ashCost: 75, desc: 'Unlock the Vampire: converts an enemy every 3rd generation.', card: 'vampire' },
+      { ashCost: 75, desc: 'Unlock the Vampire: infects a rival cell every 3rd generation.', card: 'vampire' },
       {
         ashCost: 80,
         desc: 'Vampire II feeds every other generation.',

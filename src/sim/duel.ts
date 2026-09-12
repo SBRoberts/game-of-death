@@ -10,7 +10,6 @@ import { geneByKey, normalizeChoice, type GeneChoice } from './genes'
 import { geneChoiceWarp, rarityOf, type Rarity } from './warp'
 import { seedById } from './seeds'
 import {
-  CHAIN_ARM_GENS,
   CHAIN_BREAK_GENS,
   CHAIN_FLOOR,
   CHAIN_SPIKE_CAP,
@@ -21,13 +20,88 @@ import {
 import { rngFrom, pickInt, type Rng } from './rng'
 import { TUNING, type Tuning } from './tuning'
 import { LIFE, mask, type Rule, type SimState } from './types'
-import { aiAct, smartAct } from './ai'
+import { aiAct, smartAct, type Placed } from './ai'
+import { projectImpact } from './foresight'
 
 export const PLAYER = 1
 export const RIVAL = 2
 export const RADICALS = 3
 
 export type DuelStatus = 'running' | 'won' | 'lost'
+
+/** What the projection promised at commit time — the settle report grades it. */
+export interface Forecast {
+  /** Cells the ghost showed settling (still yours two gens past the horizon). */
+  settle: number
+  /** Rival cells whose future the placement was projected to disrupt. */
+  rival: number
+  /** Radical cells touched (claimed or disrupted). */
+  radicals: number
+  /** Your own cells the placement was projected to smother. */
+  own: number
+}
+
+/** One player placement: where, what, the promise made, and what it caused. */
+export interface PlacementRecord {
+  turn: number
+  gen: number
+  patternId: string
+  name: string
+  cx: number
+  cy: number
+  cells: Array<[number, number]>
+  forecast: Forecast
+  /** Board indices the ghost showed settling / rival cells it showed struck. */
+  forecastCells: number[]
+  forecastHits: number[]
+  /** Graded at settle: forecast cells actually held / rival cells actually struck. */
+  held: number
+  struck: number
+  /** Cascade credit attributed to this placement (sum of banked chain totals). */
+  chain: number
+  cascades: number
+}
+
+/** What a turn did — the SETTLE scorecard: deltas over the incubation window. */
+export interface TurnReport {
+  turn: number
+  gens: number
+  /** Population deltas. */
+  you: number
+  rival: number
+  /** Rival cells that died in-field / defected to you during the window. */
+  rivalLysed: number
+  rivalTurned: number
+  /** Radical cells assimilated. */
+  radicals: number
+  /** Your own in-field deaths / defections. */
+  ownLysed: number
+  ownTurned: number
+  plasm: number
+  /** Cascades banked this turn, the longest (gens) and the biggest (total). */
+  chains: BankedChain[]
+  longest: number
+  peak: number
+  /** This turn's placements, graded. */
+  placements: PlacementRecord[]
+  /** Summed forecast across the turn's placements; null if nothing was placed. */
+  forecast: Forecast | null
+  held: number
+  forecastCells: number
+  struck: number
+  forecastHits: number
+}
+
+/** Per-pattern tally across the placements on record. */
+export interface PatternStat {
+  id: string
+  name: string
+  plays: number
+  chain: number
+  cascades: number
+  held: number
+  forecastCells: number
+}
 
 /** A faction's built loadout: its Conway rule, draw pool, reach, economy. */
 export interface FoldResult {
@@ -150,6 +224,24 @@ export class Duel {
   /** Chains banked this duel; the web watches this array's length for callouts. */
   readonly bankedCombos: BankedChain[] = []
   peakChain = 0
+
+  // ── the turn ledger: what each INCUBATE did, and what each placement caused ──
+  /** Current turn, 1-based. settle() advances it. */
+  turn = 1
+  /** One SETTLE report per completed turn. */
+  readonly turnReports: TurnReport[] = []
+  /** Every player placement this duel, with its forecast and attributed cascades. */
+  readonly placements: PlacementRecord[] = []
+  private snapPops: number[] = []
+  private snapCd: number[] = []
+  private snapCv: number[] = []
+  private snapBanks = 0
+  private snapGen = 0
+  private snapPlasm = 0
+  /** Gens of chain-scoring silence after a bleach step (its die-off is not a cascade). */
+  private bleachQuiet = 0
+  private prevInset = 0
+
   private comboArmedUntil = -1
   private comboLow = 0
   private prevCd: number[] = []
@@ -219,11 +311,12 @@ export class Duel {
     this.rivalRng = rngFrom(seed, 'rival')
 
     const soupRng = rngFrom(seed, 'soup')
-    this.seedColony(PLAYER, Math.floor(this.t.width * 0.22), Math.floor(this.t.height / 2), soupRng, colonySeed)
-    this.seedColony(RIVAL, Math.floor(this.t.width * 0.78), Math.floor(this.t.height / 2), soupRng, rivalSeed)
+    this.seedColony(PLAYER, Math.round(this.t.width * this.t.colonyX), Math.floor(this.t.height / 2), soupRng, colonySeed)
+    this.seedColony(RIVAL, Math.round(this.t.width * (1 - this.t.colonyX)), Math.floor(this.t.height / 2), soupRng, rivalSeed)
     this.seedRadicals(rngFrom(seed, 'radicals'))
 
     this.hand = Array.from({ length: this.t.handSize }, () => this.draw())
+    this.snapshotTurn()
   }
 
   /**
@@ -324,7 +417,7 @@ export class Duel {
       const shape = RADICAL_SHAPES[pickInt(rng, RADICAL_SHAPES.length)]
       const cells = placeAt(
         rotate(shape, pickInt(rng, 4)),
-        Math.floor(w * 0.34 + rng() * w * 0.32),
+        Math.floor(w * this.t.radicalFrom + rng() * w * this.t.radicalSpan),
         4 + pickInt(rng, h - 12),
       )
       // Require an empty 1-cell margin so debris seeds don't touch and bloom.
@@ -397,12 +490,20 @@ export class Duel {
     const nf = this.state.cfg.factions.length
     return {
       gens: this.state.gen,
-      rivalDestroyed: this.state.deaths[RIVAL],
-      playerLost: this.state.deaths[PLAYER],
+      /** Rival cells YOU lysed — contested deaths only. The honest number: it
+       *  excludes the rival's own starvation churn and anything the bleach ate,
+       *  so a ticker or an ash row built on it can never flatter you. */
+      rivalDestroyed: this.state.combatDeaths[RIVAL],
+      /** Every rival cell that died, any cause — the culture's total turnover. */
+      rivalDied: this.state.deaths[RIVAL],
+      playerLost: this.state.combatDeaths[PLAYER],
       radicalsClaimed: this.state.converts[RADICALS * nf + PLAYER],
       rivalConverted: this.state.converts[RIVAL * nf + PLAYER],
       peakChain: this.peakChain,
       bankedCombos: this.bankedCombos,
+      cascades: this.bankedCombos.length,
+      longestChain: this.bankedCombos.reduce((m, c) => Math.max(m, c.len), 0),
+      turns: this.turnReports.length,
     }
   }
 
@@ -438,10 +539,38 @@ export class Duel {
     return Math.floor(Math.min(this.t.width, this.t.height) / 2) - this.t.ringMinHalf
   }
 
-  /** Inset the storm will have at a given generation. */
+  /** The turn (1-based) a generation belongs to: turn 1 resolves gens 1..turnGens. */
+  turnOf(gen: number): number {
+    return Math.max(1, Math.ceil(gen / this.t.turnGens))
+  }
+
+  /** BLEACH inset in force during a given turn — the tactical clock. */
+  bleachAtTurn(turn: number): number {
+    const from = this.t.bleachFromTurn
+    if (from <= 0 || turn < from) return 0
+    return Math.min(this.maxInset, (turn - from + 1) * this.t.bleachPerTurn)
+  }
+
+  /** Inset the field will have at a given generation (turn-indexed, so the
+   *  projection and the settle report see the same clock). */
   insetAt(gen: number): number {
-    if (gen <= this.t.ringGrace) return 0
-    return Math.min(this.maxInset, Math.floor((gen - this.t.ringGrace) / this.t.ringShrinkEvery))
+    return this.bleachAtTurn(this.turnOf(gen))
+  }
+
+  /** The next compression after the current turn, or null if the field stays
+   *  as it is for the rest of the round. */
+  nextBleach(): { turn: number; inset: number } | null {
+    const now = this.bleachAtTurn(this.turn)
+    for (let t = this.turn + 1; t <= this.t.turnsPerRound; t++) {
+      const inset = this.bleachAtTurn(t)
+      if (inset > now) return { turn: t, inset }
+    }
+    return null
+  }
+
+  /** The inset the round ends on — how much field the bleach will have taken. */
+  get roundMaxInset(): number {
+    return this.bleachAtTurn(this.t.turnsPerRound)
   }
 
   income(faction: number): number {
@@ -452,29 +581,150 @@ export class Duel {
     if (this.status !== 'running') return
     const s = this.state
 
+    // Self-driving mode (tests, quick sims): the rival deploys at each turn
+    // boundary, before the turn's first step — the same cadence the web driver
+    // uses when it calls rivalDeploy() itself at the start of your deploy phase.
+    if (this.autoRival && s.gen % this.t.turnGens === 0) this.rivalDeploy()
+
     s.ringInset = this.insetAt(s.gen + 1)
     step(s)
     this.trackChain()
     this.biomass[PLAYER] += this.income(PLAYER)
     this.biomass[RIVAL] += this.income(RIVAL)
 
-    if (this.autoRival && s.gen % this.t.aiActEvery === 0) {
-      if (this.t.rivalSmart) {
-        smartAct(this, RIVAL, this.rivalRng, PLAYER, this.t.aiSamples, this.t.aiHorizon)
-      } else {
-        aiAct(this, RIVAL, this.rivalRng, PLAYER)
-      }
-    }
-
     if (s.gen > this.t.warmupGens) {
       if (s.pops[PLAYER] === 0) return this.finish('lost', 'Your colony is extinct.')
       if (s.pops[RIVAL] === 0) return this.finish('won', 'The rival colony is extinct.')
     }
-    if (s.ringInset >= this.maxInset || s.gen >= this.t.genLimit) {
-      const [p, r] = [s.pops[PLAYER], s.pops[RIVAL]]
-      if (p > r) this.finish('won', `The storm closed. Territory: ${p} vs ${r}.`)
-      else this.finish('lost', `The storm closed. Territory: ${p} vs ${r}. The house wins ties.`)
+    if (s.ringInset >= this.maxInset || s.gen >= this.t.genLimit) this.finishByTerritory('The bleach closed.')
+  }
+
+  /**
+   * The rival's telegraphed deploy: up to `acts` planner placements, made at
+   * the start of YOUR deploy phase so they sit on the slide while you plan and
+   * your projection accounts for them. Returns what it placed, for the UI.
+   */
+  rivalDeploy(acts = this.t.rivalActs): Placed[] {
+    const placed: Placed[] = []
+    if (this.status !== 'running') return placed
+    for (let k = 0; k < acts; k++) {
+      const r = this.t.rivalSmart
+        ? smartAct(this, RIVAL, this.rivalRng, PLAYER, this.t.aiSamples, this.t.aiHorizon)
+        : aiAct(this, RIVAL, this.rivalRng, PLAYER)
+      if (r) placed.push(r)
     }
+    return placed
+  }
+
+  /** Territory decides; a dead-even board breaks on in-field rival losses (not the house). */
+  private finishByTerritory(prefix: string): void {
+    const s = this.state
+    const [p, r] = [s.pops[PLAYER], s.pops[RIVAL]]
+    const win = p !== r ? p > r : s.combatDeaths[RIVAL] > s.combatDeaths[PLAYER]
+    const tie = p === r ? ' Even on territory — decided on lysis.' : ''
+    this.finish(win ? 'won' : 'lost', `${prefix} Territory: ${p} vs ${r}.${tie}`)
+  }
+
+  // ── the turn ledger ───────────────────────────────────────────────────────
+
+  /** Snapshot the counters the next settle report will diff against. */
+  private snapshotTurn(): void {
+    const s = this.state
+    this.snapPops = s.pops.slice()
+    this.snapCd = Array.from(s.combatDeaths)
+    this.snapCv = Array.from(s.converts)
+    this.snapBanks = this.bankedCombos.length
+    this.snapGen = s.gen
+    this.snapPlasm = this.plasm
+  }
+
+  /**
+   * Mark the start of an INCUBATE window. The settle report then measures what
+   * the culture did on its own — growth, lysis, assimilation — not what you
+   * placed. (A driver that never calls this still gets since-last-settle deltas.)
+   */
+  beginIncubate(): void {
+    this.snapshotTurn()
+  }
+
+  /**
+   * SETTLE: close the turn. Banks any cascade still running (a chain never
+   * straddles turns), grades every placement's forecast against the settled
+   * board, files the report, and — on the last turn — ends the round on
+   * territory. Deterministic given (seed, actions); a recorded action itself.
+   */
+  settle(): TurnReport {
+    this.bankChain()
+    const s = this.state
+    const nf = s.cfg.factions.length
+    const cd = s.combatDeaths
+    const cv = s.converts
+    const chains = this.bankedCombos.slice(this.snapBanks)
+    const placements = this.placements.filter((p) => p.turn === this.turn)
+    let forecast: Forecast | null = null
+    let held = 0
+    let forecastCells = 0
+    let struck = 0
+    let forecastHits = 0
+    for (const p of placements) {
+      p.held = p.forecastCells.reduce((n, i) => n + (s.cells[i] === PLAYER ? 1 : 0), 0)
+      p.struck = p.forecastHits.reduce((n, i) => n + (s.cells[i] !== RIVAL ? 1 : 0), 0)
+      held += p.held
+      forecastCells += p.forecastCells.length
+      struck += p.struck
+      forecastHits += p.forecastHits.length
+      forecast = forecast
+        ? {
+            settle: forecast.settle + p.forecast.settle,
+            rival: forecast.rival + p.forecast.rival,
+            radicals: forecast.radicals + p.forecast.radicals,
+            own: forecast.own + p.forecast.own,
+          }
+        : { ...p.forecast }
+    }
+    const report: TurnReport = {
+      turn: this.turn,
+      gens: s.gen - this.snapGen,
+      you: s.pops[PLAYER] - this.snapPops[PLAYER],
+      rival: s.pops[RIVAL] - this.snapPops[RIVAL],
+      rivalLysed: cd[RIVAL] - this.snapCd[RIVAL],
+      rivalTurned: cv[RIVAL * nf + PLAYER] - this.snapCv[RIVAL * nf + PLAYER],
+      radicals: cv[RADICALS * nf + PLAYER] - this.snapCv[RADICALS * nf + PLAYER],
+      ownLysed: cd[PLAYER] - this.snapCd[PLAYER],
+      ownTurned: cv[PLAYER * nf + RIVAL] - this.snapCv[PLAYER * nf + RIVAL],
+      plasm: this.plasm - this.snapPlasm,
+      chains,
+      longest: chains.reduce((m, c) => Math.max(m, c.len), 0),
+      peak: chains.reduce((m, c) => Math.max(m, c.total), 0),
+      placements,
+      forecast,
+      held,
+      forecastCells,
+      struck,
+      forecastHits,
+    }
+    this.turnReports.push(report)
+    if (this.status === 'running') {
+      if (this.turn >= this.t.turnsPerRound) this.finishByTerritory('The culture settled.')
+      else this.turn++
+    }
+    this.snapshotTurn()
+    return report
+  }
+
+  /** Per-pattern tallies over every placement on record — "most successful pattern". */
+  get patternStats(): PatternStat[] {
+    const map = new Map<string, PatternStat>()
+    for (const p of this.placements) {
+      const st = map.get(p.patternId) ?? { id: p.patternId, name: p.name, plays: 0, chain: 0, cascades: 0, held: 0, forecastCells: 0 }
+      st.plays++
+      st.chain += p.chain
+      st.cascades += p.cascades
+      st.held += p.held
+      st.forecastCells += p.forecastCells.length
+      map.set(p.patternId, st)
+    }
+    return [...map.values()].sort((a, b) => b.chain - a.chain || b.cascades - a.cascades || b.plays - a.plays)
   }
 
   private finish(status: DuelStatus, outcome: string): void {
@@ -525,7 +775,15 @@ export class Duel {
     const spike = Math.min(CHAIN_SPIKE_CAP, perGen - this.chainBaseline)
     this.chainBaseline += (perGen - this.chainBaseline) * 0.22
 
-    const armed = s.gen <= this.comboArmedUntil && s.ringInset === 0
+    // A bleach step and the die-off right behind it are the clock's doing, not
+    // yours: mute chain scoring for those gens (bleached cells themselves are
+    // already excluded upstream via combatDeaths).
+    if (s.ringInset > this.prevInset) this.bleachQuiet = 2
+    this.prevInset = s.ringInset
+    const quiet = this.bleachQuiet > 0
+    if (quiet) this.bleachQuiet--
+
+    const armed = s.gen <= this.comboArmedUntil && !quiet
     const combo = this.combo
     if (armed && spike >= CHAIN_FLOOR) {
       if (!combo.active) {
@@ -552,7 +810,31 @@ export class Duel {
     if (!combo.active) return
     const tier = chainTier(combo.total)
     if (tier >= 0) {
-      this.bankedCombos.push({ tier, total: combo.total, gen: this.state.gen, cx: combo.cx, cy: combo.cy })
+      // Attribute the cascade to the nearest placement of this turn — the
+      // causal source the slide draws the effect back to.
+      let src: PlacementRecord | null = null
+      let best = Infinity
+      for (const p of this.placements) {
+        if (p.turn !== this.turn) continue
+        const d = Math.hypot(p.cx - combo.cx, p.cy - combo.cy)
+        if (d < best) {
+          best = d
+          src = p
+        }
+      }
+      if (src) {
+        src.chain += combo.total
+        src.cascades++
+      }
+      this.bankedCombos.push({
+        tier,
+        total: combo.total,
+        gen: this.state.gen,
+        cx: combo.cx,
+        cy: combo.cy,
+        len: combo.len,
+        src: src ? { x: src.cx, y: src.cy, patternId: src.patternId } : null,
+      })
       if (combo.total > this.peakChain) this.peakChain = combo.total
     }
     combo.active = false
@@ -657,17 +939,54 @@ export class Duel {
     return true
   }
 
-  /** Player plays a card from the hand; the slot refills from the deck. */
+  /**
+   * Player plays a card from the hand; the slot refills from the deck. The
+   * placement goes on record with the projection made at commit time — the
+   * promise the settle report grades — so every move is a testable hypothesis.
+   */
   playCard(handIdx: number, ox: number, oy: number, rot: number): Array<[number, number]> | null {
     const id = this.hand[handIdx]
     if (!id) return null
     const pattern = this.patternFor(PLAYER, id)
     const cells = this.patternCells(pattern, ox, oy, rot)
+    if (this.status !== 'running' || this.biomass[PLAYER] < pattern.cost) return null
+    if (!this.canPlace(PLAYER, cells, pattern.clearance)) return null
+    // The forecast is taken BEFORE the board changes — it is the ghost you saw.
+    const s = this.state
+    const impact = projectImpact(s, PLAYER, cells, this.t.foresightGens, (g) => this.insetAt(g), pattern.cellType ?? 0)
+    let rival = 0
+    let radicals = 0
+    const forecastHits: number[] = []
+    impact.destroyed.forEach((i, k) => {
+      const owner = impact.destroyedOwner[k]
+      if (owner === RIVAL) {
+        rival++
+        forecastHits.push(i)
+      } else if (owner === RADICALS) radicals++
+    })
+    for (const i of impact.gained) if (s.cells[i] === RADICALS) radicals++
     if (!this.tryPlace(PLAYER, id, ox, oy, rot)) return null
     this.hand[handIdx] = this.draw()
-    // Arm the chain scorer: cascades over the next window are the player's doing.
-    this.comboArmedUntil = this.state.gen + CHAIN_ARM_GENS
+    // Arm the chain scorer through the end of THIS turn: a cascade during the
+    // incubation you just committed is your doing — and it always has a source.
+    this.comboArmedUntil = s.gen + this.t.turnGens
     this.rerollUses = 0 // a placement resets the reroll price
+    this.placements.push({
+      turn: this.turn,
+      gen: s.gen,
+      patternId: id,
+      name: pattern.name,
+      cx: cells.reduce((a, [x]) => a + x, 0) / cells.length + 0.5,
+      cy: cells.reduce((a, [, y]) => a + y, 0) / cells.length + 0.5,
+      cells,
+      forecast: { settle: impact.lasting.length, rival, radicals, own: impact.ownLost.length },
+      forecastCells: impact.lasting,
+      forecastHits,
+      held: 0,
+      struck: 0,
+      chain: 0,
+      cascades: 0,
+    })
     return cells
   }
 }

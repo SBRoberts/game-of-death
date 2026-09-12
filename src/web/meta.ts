@@ -139,9 +139,11 @@ export function ashBreakdown(
     { label: 'specimen logged', detail: 'the record grows', value: 3 },
     { label: 'endurance', detail: `${s.gens} generations`, value: Math.floor(s.gens / 20) },
     {
-      label: 'destruction',
-      detail: `${s.rivalDestroyed.toLocaleString()} rival cells died`,
-      value: Math.floor(s.rivalDestroyed / 2000),
+      // Contested deaths only (see Duel.summary) — the divisor is scaled to the
+      // honest count, which is ~30× smaller than the old all-causes number.
+      label: 'lysis',
+      detail: `${s.rivalDestroyed.toLocaleString()} rival cells lysed`,
+      value: Math.floor(s.rivalDestroyed / 50),
     },
   ]
   // New frontier: reaching a round you've never reached pays a milestone bounty,
@@ -163,14 +165,14 @@ export function ashBreakdown(
   }
   if (s.radicalsClaimed > 0)
     rows.push({
-      label: 'capture',
-      detail: `${s.radicalsClaimed} radicals claimed`,
+      label: 'assimilation',
+      detail: `${s.radicalsClaimed} radical cells assimilated`,
       value: Math.floor(s.radicalsClaimed / 2),
     })
   if (s.rivalConverted > 0)
     rows.push({
-      label: 'conversion',
-      detail: `${s.rivalConverted} enemies turned`,
+      label: 'infection',
+      detail: `${s.rivalConverted} rival cells turned`,
       value: Math.floor(s.rivalConverted / 5),
     })
   if (duel.status === 'won') rows.push({ label: 'victory', detail: 'round cleared', value: 25 })
@@ -366,14 +368,16 @@ export interface BslDef {
   blurb: string
   ashMult: number
   aiSamplesAdd: number
-  aiActEveryMul: number
-  ringGraceMul: number
+  /** Extra rival placements telegraphed per turn. */
+  rivalActsAdd: number
+  /** Turns earlier the round's bleach begins. */
+  bleachEarlier: number
 }
 export const BSL: readonly BslDef[] = [
-  { level: 1, label: 'BSL-1 · Contained', blurb: 'A calm specimen. Standard threat.', ashMult: 1.0, aiSamplesAdd: 0, aiActEveryMul: 1, ringGraceMul: 1 },
-  { level: 2, label: 'BSL-2 · Hazardous', blurb: 'Sharper rival, sooner storm. +40% ash.', ashMult: 1.4, aiSamplesAdd: 3, aiActEveryMul: 0.85, ringGraceMul: 0.85 },
-  { level: 3, label: 'BSL-3 · Virulent', blurb: 'Ruthless rival, fast storm. +90% ash.', ashMult: 1.9, aiSamplesAdd: 5, aiActEveryMul: 0.72, ringGraceMul: 0.72 },
-  { level: 4, label: 'BSL-4 · Lethal', blurb: 'The specimen fights to kill. +150% ash.', ashMult: 2.5, aiSamplesAdd: 8, aiActEveryMul: 0.6, ringGraceMul: 0.6 },
+  { level: 1, label: 'BSL-1 · Contained', blurb: 'A calm specimen. Standard threat.', ashMult: 1.0, aiSamplesAdd: 0, rivalActsAdd: 0, bleachEarlier: 0 },
+  { level: 2, label: 'BSL-2 · Hazardous', blurb: 'Sharper rival, earlier bleach. +40% ash.', ashMult: 1.4, aiSamplesAdd: 3, rivalActsAdd: 0, bleachEarlier: 1 },
+  { level: 3, label: 'BSL-3 · Virulent', blurb: 'Ruthless rival, an extra deploy a turn, early bleach. +90% ash.', ashMult: 1.9, aiSamplesAdd: 5, rivalActsAdd: 1, bleachEarlier: 1 },
+  { level: 4, label: 'BSL-4 · Lethal', blurb: 'The specimen fights to kill. +150% ash.', ashMult: 2.5, aiSamplesAdd: 8, rivalActsAdd: 1, bleachEarlier: 2 },
 ]
 export const bslDef = (n: number): BslDef => BSL[Math.max(0, Math.min(3, n - 1))]
 export function selectBsl(m: MetaState, n: number): MetaState {

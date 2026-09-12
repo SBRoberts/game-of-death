@@ -6,7 +6,7 @@
  */
 
 import { CHAIN_TIERS, ELDER, MARTYR, PLAYER, RIVAL, VAMPIRE, RADICALS, type Duel } from '../sim'
-import type { Impact } from '../sim'
+import type { Impact, SimState } from '../sim'
 
 // Cell size is runtime state so the board can fill its container (HANDOFF §3).
 // ESM live bindings keep every importer current; call setCell() only on
@@ -153,6 +153,8 @@ export interface FloatText {
 export interface Flash {
   cells: Array<[number, number]>
   ttl: number
+  /** Solid color override (a telegraphed rival deploy flashes in its hue). */
+  color?: string
 }
 
 export interface Pulse {
@@ -195,6 +197,12 @@ export interface FxState {
   genT: number
   /** True while a turn is resolving — enables per-cell life-event animation. */
   anim: boolean
+  /** This turn's placements while it resolves — the causal sources, ringed on
+   *  the slide so every cascade can be traced back to the move that made it. */
+  sources: Array<{ x: number; y: number; name: string; chain: number }> | null
+  /** During deploy: the inset the NEXT incubation opens with, if the bleach
+   *  is about to grow — drawn dashed so you plan for the clock. */
+  nextInset: number | null
 }
 
 /** The five chain tiers' display colors (index = tier). */
@@ -450,7 +458,10 @@ const mixToWhite = (v: number, t: number) => Math.round(v + (255 - v) * t)
 // ── life-event animation (ported from the turn spike) ───────────────────────
 // Survivors hold, changers move; cause leads effect. Cells birth (divide),
 // die (starve vs lyse), and get claimed (attack) between generations.
+// These mirror the engine's EV_* codes 1:1 (born/natural/combat/convert), so the
+// engine's buffer can be copied straight in; EV_SURV is the engine's EV_NONE.
 const EV_SURV = 0, EV_BORN = 1, EV_DIE_NAT = 2, EV_DIE_COMBAT = 3, EV_CONVERT = 4
+const SIM_EV_BLEACHED = 5
 const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t)
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3
 const easeOutBack = (t: number) => { const s = 1.6; const u = t - 1; return 1 + (s + 1) * u ** 3 + s * u ** 2 }
@@ -464,37 +475,32 @@ let evPrev: Uint8Array | null = null // pre-tick board snapshot for this generat
 let evGen = -1
 let evCx = 0, evCy = 0
 
-/** Diff the pre/post-tick boards into per-cell life events. Once per generation. */
-function computeEvents(s: { cells: Uint8Array; prev: Uint8Array; gen: number }, w: number, h: number): void {
+/**
+ * Load the generation's per-cell life events. The ENGINE is the authority: it
+ * writes what happened and who caused it inside the same branch that decided
+ * each cell's fate (see EV_* in src/sim/engine.ts). The renderer must never
+ * re-derive this from a prev/cells diff — a diff cannot tell a cell that
+ * starved from a cell an enemy crowded to death, so a guess here would paint
+ * the wrong faction's colour on the kill ring and lie about who did it.
+ */
+function computeEvents(s: SimState, w: number, h: number): void {
   const n = w * h
   if (!evKind || evKind.length !== n) {
     evKind = new Uint8Array(n); evCause = new Uint8Array(n); evDelay = new Float32Array(n); evPrev = new Uint8Array(n)
   }
   const kind = evKind, cause = evCause!, delay = evDelay!
   evPrev!.set(s.prev)
-  const prev = s.prev, cells = s.cells
+  kind.set(s.events)
+  cause.set(s.cause)
   let sx = 0, sy = 0, cnt = 0
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x, A = prev[i], B = cells[i]
-      if (A === B) { kind[i] = EV_SURV; cause[i] = 0; continue }
-      if (A === 0) { kind[i] = EV_BORN; cause[i] = B; continue }
-      if (B === 0) {
-        let e1 = 0, e2 = 0, e3 = 0
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue
-            const xx = x + dx, yy = y + dy
-            if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue
-            const nf = prev[yy * w + xx]
-            if (nf > 0 && nf !== A) { if (nf === PLAYER) e1++; else if (nf === RIVAL) e2++; else e3++ }
-          }
-        if (e1 + e2 + e3 > 0) { kind[i] = EV_DIE_COMBAT; cause[i] = e1 >= e2 && e1 >= e3 ? PLAYER : e2 >= e3 ? RIVAL : RADICALS; sx += x; sy += y; cnt++ }
-        else { kind[i] = EV_DIE_NAT; cause[i] = A }
-        continue
-      }
-      kind[i] = EV_CONVERT; cause[i] = B; sx += x; sy += y; cnt++
+  for (let i = 0; i < n; i++) {
+    // A bleached cell is the clock's doing, not an attributed kill: it fades
+    // quietly, with no aggressor-hued ring and no claim on anyone's cascade.
+    if (kind[i] === SIM_EV_BLEACHED) { kind[i] = EV_DIE_NAT; cause[i] = 0 }
+    if (kind[i] === EV_DIE_COMBAT || kind[i] === EV_CONVERT) {
+      sx += i % w; sy += (i / w) | 0; cnt++
     }
+  }
   evCx = cnt ? sx / cnt : w / 2
   evCy = cnt ? sy / cnt : h / 2
   for (let i = 0; i < n; i++) {
@@ -883,6 +889,31 @@ export function render(
     ctx.fillRect(0, 0, W, H)
   }
 
+  // BLEACH preview: during deploy, the field the next incubation will open
+  // with — dashed, with the doomed band faintly stained — so the clock is
+  // something you plan against rather than discover.
+  if (fx.nextInset !== null && fx.nextInset > inset) {
+    const ni = fx.nextInset
+    const band = (ni - inset) * CELL
+    ctx.fillStyle = 'rgb(255,138,112)'
+    ctx.globalAlpha = 0.07 + 0.03 * Math.sin(fx.now / 300)
+    ctx.fillRect(inset * CELL, inset * CELL, W - 2 * inset * CELL, band)
+    ctx.fillRect(inset * CELL, H - ni * CELL, W - 2 * inset * CELL, band)
+    ctx.fillRect(inset * CELL, ni * CELL, band, H - 2 * ni * CELL)
+    ctx.fillRect(W - ni * CELL, ni * CELL, band, H - 2 * ni * CELL)
+    ctx.globalAlpha = 0.55 + 0.15 * Math.sin(fx.now / 300)
+    ctx.strokeStyle = 'rgb(255,138,112)'
+    ctx.setLineDash([4, 4])
+    ctx.lineWidth = 1
+    ctx.strokeRect(ni * CELL + 0.5, ni * CELL + 0.5, W - 2 * ni * CELL - 1, H - 2 * ni * CELL - 1)
+    ctx.setLineDash([])
+    ctx.globalAlpha = 0.85
+    ctx.font = '600 10px ui-monospace, Menlo, monospace'
+    ctx.textAlign = 'left'
+    ctx.fillText('BLEACH · NEXT INCUBATION', ni * CELL + 6, ni * CELL + 13)
+    ctx.globalAlpha = 1
+  }
+
   // Foresight overlay: churn is faint; cells that SETTLE read solid — the
   // nucleus you're actually buying.
   if (impact) {
@@ -973,12 +1004,16 @@ export function render(
     }
   }
 
-  // Placement flashes.
+  // Placement flashes (yours white-hot; a telegraphed rival deploy in its hue).
   for (const flash of flashes) {
-    ctx.fillStyle = `${COLORS.flash}${(flash.ttl / 12) * 0.9})`
+    if (flash.color) {
+      ctx.globalAlpha = (flash.ttl / 12) * 0.9
+      ctx.fillStyle = flash.color
+    } else ctx.fillStyle = `${COLORS.flash}${(flash.ttl / 12) * 0.9})`
     for (const [x, y] of flash.cells) {
       ctx.fillRect(x * CELL, y * CELL, CELL - 1, CELL - 1)
     }
+    ctx.globalAlpha = 1
   }
 
   // Expanding rings: placements and detonations.
@@ -1045,6 +1080,61 @@ export function render(
 
   // The eyepiece graticule, ticked just inside the frame.
   graticule(ctx, w, h)
+
+  // The causal sources: this turn's placements, ringed while the culture
+  // resolves so the eye traces every cascade back to the move that made it.
+  if (fx.sources && fx.sources.length) {
+    const breathe = 0.45 + 0.2 * Math.sin(fx.now / 360)
+    ctx.font = '600 10px ui-monospace, Menlo, monospace'
+    ctx.textAlign = 'center'
+    for (const src of fx.sources) {
+      const cx = src.x * CELL
+      const cy = src.y * CELL
+      const r = CELL * 1.7
+      ctx.strokeStyle = COLORS.player
+      ctx.globalAlpha = breathe
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.beginPath()
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        ctx.moveTo(cx + dx * (r + 2), cy + dy * (r + 2))
+        ctx.lineTo(cx + dx * (r + 6), cy + dy * (r + 6))
+      }
+      ctx.stroke()
+      ctx.globalAlpha = 0.9
+      ctx.fillStyle = COLORS.player
+      ctx.fillText(src.name.toUpperCase() + (src.chain > 0 ? ` ×${Math.round(src.chain)}` : ''), cx, cy - r - 7)
+    }
+    ctx.globalAlpha = 1
+    // Cause → effect: a running hairline from the nearest source to the live cascade.
+    if (fx.combo) {
+      let best: { x: number; y: number } | null = null
+      let bd = Infinity
+      for (const s2 of fx.sources) {
+        const d = Math.hypot(s2.x - fx.combo.x, s2.y - fx.combo.y)
+        if (d < bd) {
+          bd = d
+          best = s2
+        }
+      }
+      if (best && bd > 3) {
+        ctx.strokeStyle = TIER_COLORS[Math.max(0, fx.combo.tier)]
+        ctx.globalAlpha = 0.6
+        ctx.setLineDash([3, 4])
+        ctx.lineDashOffset = -((fx.now / 40) % 7)
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(best.x * CELL, best.y * CELL)
+        ctx.lineTo(fx.combo.x * CELL, fx.combo.y * CELL)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.lineDashOffset = 0
+        ctx.globalAlpha = 1
+      }
+    }
+  }
 
   // Cursor-side placement evaluation: the verdict lives where you're aiming.
   // Sized for reading, not squinting: 14px type, generous padding, an opaque
